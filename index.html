@@ -438,7 +438,7 @@ tr.justin td{animation:flashin 2.4s ease-out}
       <button class="btn sm alt" id="aWav">⤓ 합본 음원만 (WAV)</button>
       <button class="btn sm alt" id="aZip">⤓ 개별 녹음 모아서 (ZIP)</button>
       <button class="btn sm alt" id="aScan">🔎 타이밍 일괄 점검</button>
-      <button class="btn sm alt" id="aTime">⏱ 타이밍 맞추기</button>
+      <button class="btn sm alt hide" id="aTime">⏱ 타이밍 맞추기</button>
     </div>
     <div class="note" id="aNote"></div>
     <div id="aBar" class="hide" style="margin:0 0 16px">
@@ -1634,6 +1634,10 @@ function voiceFor(l){
 /* ===================== 관리자 ===================== */
 async function openAdmin(){
   show("vAdmin");
+  /* 타이밍 맞추기는 평소엔 숨겨 둔다 — 대사 시간은 이미 음성인식으로 맞춰져 있다.
+     손볼 일이 생기면 주소 뒤에 &timing=1 을 붙이면 버튼이 나타난다. */
+  if(new URLSearchParams(location.search).has("timing"))
+    $("#aTime").classList.remove("hide");
   $("#aSub").textContent=`${PROJECT.title} — 대사 ${PROJECT.lines.length}줄 · 참가자 ${PROJECT.cast.length}명`;
   await pull();drawAdmin();startAdminPoll();
 }
