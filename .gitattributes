@@ -1,2 +1,11 @@
-# Auto detect text files and perform LF normalization
+# 기본: 텍스트 파일은 줄바꿈 정규화
 * text=auto
+
+# 영상·음성·이미지는 절대 건드리지 않는다 (잘못 변환되면 파일이 깨진다)
+*.mp4  binary
+*.m4a  binary
+*.wav  binary
+*.mp3  binary
+*.webm binary
+*.png  binary
+*.jpg  binary

@@ -4,7 +4,7 @@
     {
       "name": "dubbing",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["/Users/soyo/더빙룸/serve.py", "4321"],
+      "runtimeArgs": ["/Users/soyo/Desktop/더빙룸/serve.py", "4321"],
       "port": 4321,
       "autoPort": false
     }

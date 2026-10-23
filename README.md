@@ -23,7 +23,7 @@
 ## 지금 바로 열어보기
 
 ```bash
-python3 ~/더빙룸/serve.py
+python3 ~/Desktop/더빙룸/serve.py
 ```
 
 브라우저에서 `http://localhost:4321/` 로 들어가세요.
@@ -242,7 +242,7 @@ SUPABASE_ANON_KEY: "eyJhbGciOi...",
 크레딧만 따로 미리 보려면:
 
 ```bash
-~/.dubtools/bin/python ~/더빙룸/make_credits.py --fetch
+~/.dubtools/bin/python ~/Desktop/더빙룸/make_credits.py --fetch
 ```
 
 `_credits/title.png` 와 `_credits/credits.png` 가 생깁니다.
@@ -255,7 +255,7 @@ SUPABASE_ANON_KEY: "eyJhbGciOi...",
 오프닝과 엔딩 크레딧(소감 목소리 포함)을 붙이려면 아래를 돌리세요:
 
 ```bash
-~/.dubtools/bin/python ~/더빙룸/build_final.py
+~/.dubtools/bin/python ~/Desktop/더빙룸/build_final.py
 ```
 
 **두 개가 같이 만들어집니다:**
@@ -293,7 +293,7 @@ SUPABASE_ANON_KEY: "eyJhbGciOi...",
 
 ```bash
 FF=~/.dubtools/bin/ffmpeg
-cd ~/더빙룸/video
+cd ~/Desktop/더빙룸/video
 "$FF" -i clip.mp4 -t 85.6 -vf "scale=1280:-2,fade=t=in:st=0:d=0.8,fade=t=out:st=83:d=2.6" \
       -af "afade=t=out:st=83:d=2.6" -c:v libx264 -crf 23 -c:a aac -movflags +faststart clip88.mp4
 ```
