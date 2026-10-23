@@ -120,8 +120,10 @@ h1{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
   font-family:"Courier Prime",monospace;font-size:11px;font-weight:700;letter-spacing:.14em}
 .lamp.on{display:flex}
 .lamp i{width:8px;height:8px;border-radius:50%;background:#fff;animation:blink 1s infinite}
-.shad{position:absolute;inset:0;display:none;place-items:center;background:rgba(8,8,6,.8);text-align:center}
-.shad.on{display:grid}
+.shad{position:absolute;left:0;right:0;top:0;display:none;justify-content:center;pointer-events:none;
+  padding:12px 0 26px;text-align:center;
+  background:linear-gradient(180deg,rgba(8,8,6,.85),rgba(8,8,6,0))}
+.shad.on{display:flex}
 /* 큐 사인 : 지금 말하라는 신호 */
 .cuego{position:absolute;inset:0;display:none;place-items:center;pointer-events:none;
   font-size:58px;font-weight:800;color:#fff;letter-spacing:.04em;
@@ -130,8 +132,9 @@ h1{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
 @keyframes pop{0%{transform:scale(.6);opacity:0}25%{transform:scale(1.12);opacity:1}100%{transform:scale(1);opacity:0}}
 .cuebar{position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(255,255,255,.12)}
 .cuebar>span{display:block;height:100%;width:0;background:var(--rec)}
-.shad b{font-size:26px;color:var(--cool);display:block}
-.shad small{color:var(--dim);font-size:13px;display:block;margin-top:8px}
+.shad b{font-size:24px;color:var(--cool);display:block;text-shadow:0 2px 10px #000}
+.shad small{color:#dfe8f5;font-size:14px;display:block;margin-top:5px;
+  font-family:"Courier Prime",monospace;text-shadow:0 2px 8px #000}
 
 /* 타임라인 */
 .tl{position:relative;height:38px;margin-top:11px;border:1px solid var(--line);border-radius:6px;
@@ -968,7 +971,7 @@ function stopAll(){
   if(noteBusy)stopNote();
   if(mineA){mineA.pause();mineA=null;}
   mixPlaying.forEach(a=>{try{a.pause()}catch(e){}}); mixPlaying=[];
-  clearTimeout(shadT);
+  if(shadT){clearInterval(shadT);shadT=0}
   $("#ovl").classList.add("off");$("#lamp").classList.remove("on");$("#shad").classList.remove("on");
   $("#cueGo").classList.remove("on");$("#cueFill").style.width="0";
   $("#nowline").innerHTML="";markCue(-1);
@@ -1043,16 +1046,35 @@ function practice(l){
 }
 /* 섀도잉 : 한 번 들려주고 그만큼 비우기 */
 let shadT=0;
+/* ① 원본으로 한 번 듣고 ② 같은 구간을 배경음악만 틀어 그 위에 따라 말한다.
+   영상이 멈춰 있으면 입을 맞출 수 없어서, 2단계에서도 영상을 계속 돌린다. */
 async function shadow(l){
   stopAll();
-  vid.muted=false;vid.playbackRate=rate();
+  const sp=rate();
+  vid.muted=false; bgm&&bgm.pause();
+  vid.playbackRate=sp;
   await seekTo(l.s-0.4); await playSafe();
-  run({end:l.e+0.1,tick:showNow,done:()=>{
-    vid.pause();job=null;
-    const ms=(l.e-l.s)/rate()*1000+500;
-    $("#shadTxt").textContent=`${((l.e-l.s)/rate()).toFixed(1)}초`;
+  run({end:l.e+0.1,tick:showNow,done:async()=>{
+    job=null; vid.pause();
+    const dur=(l.e-l.s)/sp;
+    $("#shadTxt").textContent=dur.toFixed(1)+"초";
     $("#shad").classList.add("on");
-    shadT=setTimeout(()=>{$("#shad").classList.remove("on");say("한 번 더 하려면 🗣 섀도잉 을 다시 누르세요.")},ms);
+    const t0=performance.now();
+    if(shadT)clearInterval(shadT);
+    shadT=setInterval(()=>{
+      const left=Math.max(0,dur-(performance.now()-t0)/1000);
+      $("#shadTxt").textContent=left.toFixed(1)+"초";
+    },100);
+    vid.muted=true;                        // 원어민 소리는 끄고
+    await seekTo(l.s);
+    if(bgm){bgm.currentTime=l.s;bgm.playbackRate=sp;bgm.play().catch(()=>{})}
+    await playSafe();
+    run({end:l.e+0.12,tick:t=>{showNow(t);bgmSync(t)},done:()=>{
+      if(shadT){clearInterval(shadT);shadT=0}
+      $("#shad").classList.remove("on");
+      stopAll();
+      say("한 번 더 하려면 <b>🗣 섀도잉</b> 을 다시 누르세요.");
+    }});
   }});
 }
 /* 팀 전체 / 내 대사만 */
