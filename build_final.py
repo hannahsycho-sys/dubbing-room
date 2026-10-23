@@ -60,6 +60,9 @@ argv = sys.argv[1:]
 USE_ORIG = "--orig" in argv
 KEEP     = "--keep" in argv
 NO_TITLES= "--no-titles" in argv
+SUBS     = "--subs" in argv            # 영상에 자막을 새긴다
+SUBS_SOFT= "--subs-soft" in argv       # 끄고 켤 수 있는 자막으로 넣는다
+SUBLANG  = argv[argv.index("--sub-lang")+1] if "--sub-lang" in argv else "both"
 ONLY     = argv[argv.index("--only")+1] if "--only" in argv else None
 
 # ---------- 제출 목록 ----------
@@ -155,6 +158,26 @@ subprocess.run([FF, "-hide_banner", "-loglevel", "error", "-y",
                 "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                 "-movflags", "+faststart", body], check=True)
 
+# ---------- 자막 ----------
+# 파일은 언제나 만들어 둔다 (유튜브 업로드·편집 프로그램에서 쓸 수 있게)
+import make_subs
+sys.argv = ["make_subs", "--lang", SUBLANG]
+try:
+    make_subs.main()
+except SystemExit:
+    pass
+
+if SUBS:
+    print("자막을 영상에 새기는 중…")
+    ass = os.path.join(HERE, "자막.ass")
+    subbed = os.path.join(tmp, "body_sub.mp4")
+    esc_ass = ass.replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
+    subprocess.run([FF, "-hide_banner", "-loglevel", "error", "-y", "-i", body,
+                    "-vf", f"subtitles='{esc_ass}',format=yuv420p",
+                    "-c:v", "libx264", "-preset", "medium", "-crf", "23",
+                    "-c:a", "copy", "-movflags", "+faststart", subbed], check=True)
+    body = subbed
+
 suffix = ('_' + ONLY) if ONLY else ''
 # 1) 더빙만 입힌 본편 — 항상 따로 저장한다 (어차피 중간에 만들어지므로 추가 비용이 없다)
 plain = os.path.join(HERE, f"본편만{suffix}.mp4")
@@ -235,6 +258,18 @@ else:
         "-c:v","libx264","-preset","medium","-crf","23","-pix_fmt","yuv420p",
         "-c:a","aac","-b:a","192k","-movflags","+faststart",out], check=True)
     print(f"  타이틀 {TITLE_SEC:.0f}초 + 본편 {DUB_END:.1f}초 + 크레딧 {ctotal:.0f}초")
+
+    if SUBS_SOFT:          # 끄고 켤 수 있는 자막 트랙을 넣는다 (타이틀 길이만큼 밀어서)
+        print("끄고 켤 수 있는 자막 넣는 중…")
+        sys.argv = ["make_subs", "--lang", SUBLANG, "--offset", str(TITLE_SEC), "--suffix", "_최종"]
+        try: make_subs.main()
+        except SystemExit: pass
+        srt = os.path.join(HERE, "자막_최종.srt")
+        tagged = os.path.join(tmp, "with_subs.mp4")
+        subprocess.run([FF,"-hide_banner","-loglevel","error","-y","-i",out,"-i",srt,
+            "-map","0","-map","1","-c","copy","-c:s","mov_text",
+            "-metadata:s:s:0","language=kor","-movflags","+faststart",tagged], check=True)
+        shutil.move(tagged, out)
     made.append(out)
 
 if not KEEP:

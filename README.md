@@ -12,6 +12,7 @@
 ├─ serve.py         ← 로컬에서 열어볼 때 쓰는 서버
 ├─ build_final.py    ← 최종 영상 한 파일 만들기 (타이틀·크레딧 포함)
 ├─ make_credits.py   ← 오프닝 타이틀 / 엔딩 크레딧 그리기
+├─ make_subs.py      ← 자막 파일(srt·ass) 만들기
 └─ video/
    ├─ clip88.mp4     ← 더빙할 영상 (0:00–1:25.6, 720p, 앞뒤 페이드)
    ├─ clip_bgm.m4a   ← 목소리를 뺀 배경음악·효과음
@@ -273,6 +274,25 @@ SUPABASE_ANON_KEY: "eyJhbGciOi...",
 | `--only black` | 블랙 팀 구간만 |
 | `--orig` | 배경음악 대신 원본 소리 위에 얹기 (확인용) |
 | `--no-titles` | 완성본을 만들지 않고 `본편만.mp4` 만 |
+| `--subs` | **자막을 영상에 새깁니다** (어디서 봐도 보임) |
+| `--subs-soft` | 끄고 켤 수 있는 자막 트랙으로 넣습니다 |
+| `--sub-lang en` | 영어 자막만 (`ko` 는 한글만, 기본은 둘 다) |
+
+### 자막
+
+`build_final.py` 를 돌리면 **`자막.srt` 와 `자막.ass` 가 항상 같이 만들어집니다.**
+영상에 안 새겨도 유튜브 업로드나 편집 프로그램에서 바로 쓸 수 있습니다.
+
+```bash
+# 자막 파일만 (영상 없이)
+~/.dubtools/bin/python ~/Desktop/더빙룸/make_subs.py
+
+# 영상에 새겨서 완성본 만들기
+~/.dubtools/bin/python ~/Desktop/더빙룸/build_final.py --subs
+```
+
+기본은 **영어(흰색, 굵게) 위 / 한글(연한 파랑) 아래** 입니다.
+글자 크기·색을 바꾸려면 `make_subs.py` 의 `EN_TAG` / `KO_TAG` 를 고치면 됩니다.
 
 아직 안 올라온 대사가 있으면 그 자리는 배경음악만 들어가고, 몇 줄이 비었는지 알려줍니다.
 나중에 다 모이면 다시 돌리면 됩니다.

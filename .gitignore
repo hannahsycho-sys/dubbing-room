@@ -6,3 +6,5 @@ _credits/
 본편만*.mp4
 완성본*.mp4
 .DS_Store
+자막*.srt
+자막*.ass
