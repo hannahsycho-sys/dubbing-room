@@ -213,6 +213,12 @@ label.sw input{accent-color:var(--amber)}
 .st.local{color:var(--amber)}
 .st.up{color:var(--ok)}
 
+.syncrow{display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap}
+.synclab{font-family:"Courier Prime",monospace;font-size:10.5px;letter-spacing:.14em;
+  color:var(--dim);text-transform:uppercase;margin-right:2px}
+.syncrow .mini{height:30px;padding:0 10px;font-size:11.5px}
+.syncrow .nval{font-size:12.5px;min-width:56px;text-align:center;font-weight:700}
+@media(pointer:coarse){.syncrow .mini{height:40px;font-size:12.5px}}
 .wave{margin-top:10px;border:1px solid var(--line);border-radius:5px;background:var(--bg);overflow:hidden}
 .wave .plot{position:relative}
 .wave canvas{display:block;width:100%;height:62px}
@@ -487,6 +493,16 @@ import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 /* ===================== 기본 ===================== */
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const PRE=3.0, TAIL=0.45;   // 녹음 전 3초 카운트 / 대사 뒤 여유
+/* 내 대사가 시작되기 '조금 전에' 원음을 끊는다.
+   브라우저가 소리를 미리 버퍼에 담아둬서, 정확히 시작점에 음소거해도
+   이미 담긴 0.1~0.2초가 흘러나온다 → 내 대사의 원어민 목소리가 새어나온다.
+   앞 대사와 붙어 있으면 그 간격만큼만 끊어서 앞 대사를 해치지 않는다. */
+const HUSH_MAX=0.35, HUSH_MIN=0.12;
+function hushFor(l){
+  const i=PROJECT.lines.findIndex(x=>x.id===l.id);
+  const gap=i>0 ? l.s-PROJECT.lines[i-1].e : HUSH_MAX;
+  return Math.max(HUSH_MIN, Math.min(HUSH_MAX, gap));
+}
 const online=!!(CONFIG.SUPABASE_URL&&CONFIG.SUPABASE_ANON_KEY);
 const sb=online?createClient(CONFIG.SUPABASE_URL,CONFIG.SUPABASE_ANON_KEY):null;
 const isAdmin=new URLSearchParams(location.search).get("admin")===CONFIG.ADMIN_KEY;
@@ -498,6 +514,8 @@ const chOf=c=>PROJECT.chars[c]||{color:"#888",en:c};
 const linesOf=p=>PROJECT.lines.filter(l=>l.team===p.team&&p.chars.includes(l.char));
 const teamLines=t=>PROJECT.lines.filter(l=>l.team===t);
 const lineById=id=>PROJECT.lines.find(l=>l.id===id);
+/* 내 녹음을 몇 ms 밀어둘지 — 서버에 저장된 값 */
+const offOf=id=>(subs.find(s=>s.line_id===id)?.offset_ms)||0;
 
 /* takes[대사번호] = { list:[{blob,url,dur}], chosen:고른번호 }
    한 대사에 여러 번 녹음해두고 들어보며 고르거나 지울 수 있다. */
@@ -570,16 +588,20 @@ const bgm=PROJECT.videoBgm?Object.assign(new Audio(PROJECT.videoBgm),{preload:"a
 
 /* 파형 비교용 — 목소리만 분리한 트랙을 한 번만 받아 둔다 */
 const VOCALS = (PROJECT.videoVocals || (PROJECT.videoBgm||"").replace("_bgm","_vocals")) || null;
-let vocalBuf=null, vocalTried=false;
-async function getVocals(){
-  if(vocalBuf||vocalTried)return vocalBuf;
-  vocalTried=true;
-  try{
-    const ac=new (window.AudioContext||webkitAudioContext)();
-    vocalBuf=await ac.decodeAudioData(await (await fetch(VOCALS)).arrayBuffer());
-    ac.close();
-  }catch(e){ console.warn("원본 목소리 트랙 없음",e) }
-  return vocalBuf;
+/* 받아오는 '약속' 자체를 기억한다.
+   예전에는 '시도함' 표시를 받기도 전에 해버려서, 동시에 부르면 두 번째부터 빈 값을 받았다. */
+let vocalPromise=null;
+function getVocals(){
+  if(vocalPromise)return vocalPromise;
+  vocalPromise=(async()=>{
+    try{
+      const ac=new (window.AudioContext||webkitAudioContext)();
+      const buf=await ac.decodeAudioData(await (await fetch(VOCALS)).arrayBuffer());
+      ac.close();
+      return buf;
+    }catch(e){ console.warn("원본 목소리 트랙을 읽지 못했습니다",e); return null }
+  })();
+  return vocalPromise;
 }
 /* 구간을 cols 개 막대로 요약 (각자 최댓값으로 정규화) */
 function envelope(buf,from,to,cols){
@@ -799,7 +821,37 @@ function drawCues(){
          마이크가 끝내 안 되는 기기가 나오면 주소 뒤에 ?upload=1 을 붙여 쓴다. */
       if(needUpload)mk("📁 파일 올리기",null,()=>pickFile(l));
 
-      if(loc) drawWave(d, l);          // 녹음이 있으면 파형 비교를 그려준다
+      if(loc||up) drawWave(d, l);      // 내 사본이든 올라간 것이든 있으면 파형을 그린다
+
+      /* 싱크 미세조정 — 다시 찍지 않고 밀고 당겨 맞춘다 */
+      if(up && online){
+        const sy=document.createElement("div"); sy.className="syncrow";
+        const val=document.createElement("span"); val.className="nval mono";
+        const paint=()=>{const o=offOf(l.id);
+          val.textContent=(o>0?"+":"")+(o/1000).toFixed(2)+"초";
+          val.style.color=o?"var(--amber)":"var(--dim)";};
+        const nudge=async delta=>{
+          const nv=delta===null?0:Math.max(-2000,Math.min(2000,offOf(l.id)+delta));
+          sy.querySelectorAll("button").forEach(b=>b.disabled=true);
+          const {error}=await sb.from("submissions").update({offset_ms:nv}).eq("id",up.id);
+          if(error) say(`미세조정 저장 실패: ${esc(error.message)}`,1);
+          else{
+            const row=subs.find(x=>x.line_id===l.id); if(row)row.offset_ms=nv;
+            paint(); drawWave(d,l);                 // 파형도 같이 움직인다
+            say(nv? `${(nv/1000).toFixed(2)}초 ${nv>0?"뒤로":"앞으로"} 밀었습니다. <b>🎬 영상에 맞춰</b> 로 확인해 보세요.`
+                  : "원래 위치로 되돌렸습니다.");
+          }
+          sy.querySelectorAll("button").forEach(b=>b.disabled=false);
+        };
+        const b=(t,fn,title)=>{const x=document.createElement("button");
+          x.className="mini";x.textContent=t;x.title=title||"";x.onclick=()=>fn();return x};
+        const lab=document.createElement("span"); lab.className="synclab"; lab.textContent="싱크";
+        sy.append(lab, b("◀ 50",()=>nudge(-50),"50ms 앞으로 (더 빨리)"), val,
+                      b("50 ▶",()=>nudge(50),"50ms 뒤로 (더 늦게)"),
+                      b("↺",()=>nudge(null),"원래대로"));
+        paint();
+        d.append(sy);
+      }
       /* 녹음한 테이크 목록 — 들어보고 고르고 지운다 */
       const tbox=d.querySelector(".tks");
       list.forEach((t,i)=>{
@@ -855,7 +907,14 @@ $("#pLoop").onchange=()=>drawCues();
 /* 원본 대사(위)와 내 녹음(아래)을 같은 시간축에 그려, 빠른지 늦은지 눈으로 보게 한다 */
 async function drawWave(cardEl,l){
   const box=cardEl.querySelector(".wave"); if(!box)return;
-  const tk=tkCur(l.id); if(!tk)return;
+  const tk=tkCur(l.id);
+  const up=subs.find(x=>x.line_id===l.id);
+  /* 이 기기에 사본이 없어도(다른 기기에서 녹음했거나 브라우저를 비웠거나)
+     올라간 녹음을 받아서 그려 준다 */
+  const getBytes = tk ? (()=>tk.blob.arrayBuffer())
+                 : (up&&online) ? (async()=>(await fetch(pub(up.path))).arrayBuffer())
+                 : null;
+  if(!getBytes)return;
   const cv=box.querySelector("canvas");
   const W=Math.max(240,Math.round(cardEl.clientWidth-32)), H=62, COLS=W;
   cv.width=W*2; cv.height=H*2; cv.style.height=H+"px";
@@ -864,9 +923,9 @@ async function drawWave(cardEl,l){
   let mineBuf=null, origEnv=null;
   try{
     const ac=new (window.AudioContext||webkitAudioContext)();
-    mineBuf=await ac.decodeAudioData(await tk.blob.arrayBuffer());
+    mineBuf=await ac.decodeAudioData(await getBytes());
     ac.close();
-  }catch(e){ return }
+  }catch(e){ console.warn("파형 그리기 실패",e); return }
   const ov=await getVocals();
   if(ov) origEnv=envelope(ov, l.s, l.s+span, COLS);
   const mineEnv=envelope(mineBuf, 0, span, COLS);
@@ -883,14 +942,20 @@ async function drawWave(cardEl,l){
     g.fillStyle="rgba(170,163,145,.55)";
     for(let i=0;i<COLS;i++){const h=origEnv[i]*(mid-3); g.fillRect(i,mid-h,1,h)}
   }
-  // 아래 : 내 녹음
+  // 아래 : 내 녹음 (미세조정한 만큼 밀어서)
+  const offPx=Math.round((offOf(l.id)/1000)/span*W);
   g.fillStyle="rgba(240,165,0,.85)";
-  for(let i=0;i<COLS;i++){const h=mineEnv[i]*(mid-3); g.fillRect(i,mid,1,h)}
+  for(let i=0;i<COLS;i++){
+    const x=i+offPx; if(x<0||x>=W)continue;
+    const h=mineEnv[i]*(mid-3); g.fillRect(x,mid,1,h);
+  }
 
   // 한 줄 해설
   const first=a=>{for(let i=0;i<a.length;i++)if(a[i]>0.12)return i/a.length*span; return null};
   const last =a=>{for(let i=a.length-1;i>=0;i--)if(a[i]>0.12)return i/a.length*span; return null};
-  const mS=first(mineEnv), mE=last(mineEnv);
+  const offSec=offOf(l.id)/1000;
+  const mS0=first(mineEnv), mE0=last(mineEnv);
+  const mS=mS0!=null?mS0+offSec:null, mE=mE0!=null?mE0+offSec:null;
   const oS=origEnv?first(origEnv):null;
   let tip="";
   if(mS!=null&&oS!=null){
@@ -1253,6 +1318,7 @@ async function record(l){
   await playSafe();
   preAudio();
 
+  const hush=hushFor(l);                  // 앞 대사와의 간격에 맞춘 차단 시점
   let lastN=null, armed=false; const firedLead=new Set();
   run({end:l.e+TAIL,tick:t=>{
     showNow(t);
@@ -1266,7 +1332,10 @@ async function record(l){
         }
       if(needOriginal && $("#dMon").value==="bgm"){
         const onTake=rec1.some(c=>t>=c.l.s-0.03 && t<c.l.e+0.12);
-        vid.muted=onTake;                  // 녹음본이 흐르는 동안만 원음 차단
+        const nearMine=t>=l.s-hush;        // 내 차례 직전 — 원음을 미리 끊는다
+        vid.muted=onTake||nearMine;
+        if(nearMine&&bgm&&bgm.paused)bgmStart(t);   // 끊긴 자리를 배경음악으로 메운다
+        if(nearMine)bgmSync(t);
       }else bgmSync(t);
 
       if(t<l.s){
@@ -1348,12 +1417,18 @@ async function playWith(l,v){
 /* 내 더빙 얹어 듣기 */
 async function overlay(l){
   stopAll();
+  const off=offOf(l.id)/1000;             // 미세조정한 만큼 늦게/빨리 튼다
   mineA=new Audio(tkCur(l.id).url);
   vid.playbackRate=1;
-  await seekTo(l.s);
-  await playSafe(); mineA.play();
-  applyAudio(l.s);
-  run({end:l.e+TAIL,tick:t=>{showNow(t);bgmSync(t)},done:stopAll});
+  const lead=Math.min(0.8,l.s);
+  await seekTo(l.s-lead);
+  await playSafe();
+  applyAudio(vid.currentTime);
+  let fired=false;
+  run({end:l.e+TAIL+Math.max(0,off),tick:t=>{
+    showNow(t); bgmSync(t);
+    if(!fired&&t>=l.s+off){fired=true;mineA.play().catch(()=>{})}
+  },done:stopAll});
 }
 $("#dMix").onclick=async()=>{
   stopAll();
