@@ -455,7 +455,15 @@ tr.justin td{animation:flashin 2.4s ease-out}
   <section id="vTime" class="hide">
     <p class="kicker">Timing</p>
     <h1>타이밍 맞추기</h1>
-    <p class="sub">영상을 틀어놓고 대사가 <b>시작될 때마다 스페이스바</b>를 누르세요. 끝까지 찍은 뒤 내려받아 <code>segments.js</code> 의 <code>lines</code> 를 통째로 바꾸면 됩니다.</p>
+    <p class="sub">대사가 나오는 <b>시각을 손으로 다시 찍는 도구</b>입니다.
+      영상을 틀어놓고 대사가 <b>시작될 때마다 스페이스바</b>를 누른 뒤,
+      <code>새 lines 내려받기</code> 로 받아 <code>segments.js</code> 의 <code>lines</code> 를 바꾸면 됩니다.</p>
+    <div class="note">
+      <b>평소에는 쓸 일이 없습니다.</b> 지금 대사 시간은 목소리만 분리한 트랙에 음성인식을 돌려
+      기계가 맞춘 값입니다 (단어 일치율 96%).<br>
+      <b>이럴 때만 쓰세요</b> — 특정 대사의 자막이 엉뚱한 때 뜨거나, 녹음할 때 큐가 눈에 띄게 어긋날 때.
+      찍지 않고 내려받으면 지금 값이 그대로 나오니 망가지지는 않습니다.
+    </div>
     <div class="stagebox" style="max-width:640px;margin-bottom:12px">
       <video id="tvid" playsinline controls></video>
     </div>
