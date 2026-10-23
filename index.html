@@ -262,6 +262,16 @@ td.c{font-family:"Courier Prime",monospace}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px}
 .dot.y{background:var(--ok)}.dot.n{background:var(--line)}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+.balbox{border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:14px 16px;margin:0 0 16px}
+.balbox h4{margin:0 0 5px;font-size:14px;color:var(--amber)}
+.balbox p{margin:0 0 12px;font-size:12.5px;color:var(--dim);line-height:1.6}
+.balbox p b{color:var(--ink)}
+.balrow{display:flex;align-items:center;gap:11px;margin-top:9px;flex-wrap:wrap}
+.balrow>span:first-child{font-size:12.5px;color:var(--dim);min-width:72px}
+.balrow input[type=range]{flex:1;min-width:150px;accent-color:var(--amber)}
+.balrow .mono{font-size:12.5px;color:var(--amber);font-weight:700;min-width:42px;text-align:right}
+.balcode{font-family:"Courier Prime",monospace;font-size:11.5px;color:var(--dim);
+  background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:5px 9px}
 .flag{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:3px;margin-left:6px}
 .flag.bad{background:rgba(224,69,60,.18);color:#ff9a92;border:1px solid rgba(224,69,60,.5)}
 .flag.warn{background:rgba(240,165,0,.15);color:var(--amber);border:1px solid rgba(240,165,0,.45)}
@@ -445,6 +455,25 @@ tr.justin td{animation:flashin 2.4s ease-out}
       <button class="btn sm alt" id="aZip">⤓ 개별 녹음 모아서 (ZIP)</button>
       <button class="btn sm alt" id="aScan">🔎 타이밍 일괄 점검</button>
       <button class="btn sm alt hide" id="aTime">⏱ 타이밍 맞추기</button>
+    </div>
+    <div class="balbox">
+      <h4>🔊 소리 균형 맞추기</h4>
+      <p>슬라이더를 움직이고 <b>▶ 합본 들어보기</b> 로 확인하세요.
+         마음에 들면 아래 문구를 <code>segments.js</code> 의 <code>mix</code> 에 적으면 최종 영상에도 적용됩니다.</p>
+      <div class="balrow">
+        <span>배경음악</span>
+        <input type="range" id="balBgm" min="0" max="250" value="90">
+        <span class="mono" id="balBgmV">0.90</span>
+      </div>
+      <div class="balrow">
+        <span>코치 목소리</span>
+        <input type="range" id="balVoice" min="0" max="250" value="125">
+        <span class="mono" id="balVoiceV">1.25</span>
+      </div>
+      <div class="balrow">
+        <button class="mini" id="balReset">↺ 기본값</button>
+        <code id="balCode" class="balcode"></code>
+      </div>
     </div>
     <div class="note" id="aNote"></div>
     <div id="aBar" class="hide" style="margin:0 0 16px">
@@ -1897,6 +1926,27 @@ function tickLive(){
   el.textContent = sec<3 ? "방금 갱신됨" : `자동 갱신 중 · ${sec}초 전`;
 }
 
+/* 소리 균형 — 슬라이더로 맞춘 값을 기억해 두고 합본에 쓴다.
+   최종 영상(build_final.py)에도 적용하려면 segments.js 의 mix 에 적어야 한다. */
+const MIXDEF={bgm:(PROJECT.mix?.bgmVolume??0.9), voice:(PROJECT.mix?.voiceVolume??1.25)};
+let balance={...MIXDEF};
+try{ const v=JSON.parse(localStorage.getItem("dubroom:balance")||"null"); if(v)balance=v }catch(e){}
+function paintBalance(){
+  $("#balBgm").value=Math.round(balance.bgm*100);
+  $("#balVoice").value=Math.round(balance.voice*100);
+  $("#balBgmV").textContent=balance.bgm.toFixed(2);
+  $("#balVoiceV").textContent=balance.voice.toFixed(2);
+  const same=Math.abs(balance.bgm-MIXDEF.bgm)<0.005&&Math.abs(balance.voice-MIXDEF.voice)<0.005;
+  $("#balCode").textContent = same
+    ? "segments.js 의 값과 같습니다"
+    : `bgmVolume: ${balance.bgm.toFixed(2)},  voiceVolume: ${balance.voice.toFixed(2)},`;
+  try{ localStorage.setItem("dubroom:balance",JSON.stringify(balance)) }catch(e){}
+}
+$("#balBgm").oninput  =e=>{balance.bgm  =+e.target.value/100; paintBalance()};
+$("#balVoice").oninput=e=>{balance.voice=+e.target.value/100; paintBalance()};
+$("#balReset").onclick=()=>{balance={...MIXDEF}; paintBalance()};
+paintBalance();
+
 let mixSkipped=[];
 /* 따로따로 녹음한 목소리를 자연스럽게 잇기 위한 다듬기
    · 앞뒤 묵음을 잘라 제자리에서 시작하게
@@ -1933,15 +1983,16 @@ async function mix(){
   if(!voices.length)throw new Error("녹음을 하나도 읽지 못했습니다. 이 브라우저가 녹음 형식을 지원하지 않을 수 있습니다 — 크롬으로 열어보세요.");
   tmp.close();
   const off=new OfflineAudioContext(2,Math.ceil(sr*dur),sr);
-  if(bed){const b=off.createBufferSource();b.buffer=bed;const g=off.createGain();g.gain.value=.85;
+  if(bed){const b=off.createBufferSource();b.buffer=bed;const g=off.createGain();g.gain.value=balance.bgm;
     b.connect(g).connect(off.destination);b.start(0)}
   for(const v of voices){
     const {offset,dur,gain}=polish(v.buf);
     const src=off.createBufferSource(); src.buffer=v.buf;
     const g=off.createGain(); const at=v.at, fade=0.015;
     g.gain.setValueAtTime(0.0001,at);
-    g.gain.linearRampToValueAtTime(gain,at+fade);
-    g.gain.setValueAtTime(gain,Math.max(at+fade,at+dur-0.03));
+    const gv=gain*balance.voice;
+    g.gain.linearRampToValueAtTime(gv,at+fade);
+    g.gain.setValueAtTime(gv,Math.max(at+fade,at+dur-0.03));
     g.gain.linearRampToValueAtTime(0.0001,at+dur);
     src.connect(g).connect(off.destination);
     src.start(at,offset,dur);

@@ -49,6 +49,15 @@ VIDEO = jsval(seg, "video")
 BGM   = jsval(seg, "videoBgm")
 DUB_END = float(re.search(r'dubEnd:\s*([\d.]+)', seg).group(1))
 
+def mixval(key, default):
+    m = re.search(rf'{key}:\s*([\d.]+)', seg)
+    return float(m.group(1)) if m else default
+BGM_VOL   = mixval("bgmVolume",   0.9)
+VOICE_VOL = mixval("voiceVolume", 1.25)
+TITLE_SEC = mixval("titleSec",    4.0)
+FADE_IN   = mixval("fadeIn",      0.8)
+FADE_OUT  = mixval("fadeOut",     2.6)
+
 LINES = []
 for m in re.finditer(r'\{\s*id:\s*(\d+),\s*team:"(\w+)",\s*char:"([^"]+)",\s*s:\s*([\d.]+),\s*e:\s*([\d.]+)', seg):
     LINES.append(dict(id=int(m.group(1)), team=m.group(2), char=m.group(3),
@@ -121,7 +130,7 @@ if bed:
     ins += ["-i", bed]
 else:
     ins += ["-i", video]        # 원본 소리를 깔개로
-filt.append("[0:a]volume=0.9,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[bed]")
+filt.append(f"[0:a]volume={BGM_VOL},aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[bed]")
 mixn.append("[bed]")
 
 for i, l in enumerate([l for l in have if l["id"] in files], start=1):
@@ -136,6 +145,7 @@ for i, l in enumerate([l for l in have if l["id"] in files], start=1):
         f"silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.025:detection=peak,"
         f"loudnorm=I=-20:TP=-2.0:LRA=11,"
         f"afade=t=in:st=0:d=0.015,"
+        f"volume={VOICE_VOL},"
         f"adelay={d}|{d}[v{i}]")
     mixn.append(f"[v{i}]")
 
@@ -208,7 +218,6 @@ else:
         except Exception as e:
             print(f"  소감 건너뜀 {n['person']}: {e}")
 
-    TITLE_SEC = 4.0
     title_png = os.path.join(MC.OUT, "title.png")
     cred_png  = os.path.join(MC.OUT, "credits.png")
     speed, ctotal = sched["speed"], sched["total"]
