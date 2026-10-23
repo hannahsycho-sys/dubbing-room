@@ -253,6 +253,13 @@ td.c{font-family:"Courier Prime",monospace}
 .flag.bad{background:rgba(224,69,60,.18);color:#ff9a92;border:1px solid rgba(224,69,60,.5)}
 .flag.warn{background:rgba(240,165,0,.15);color:var(--amber);border:1px solid rgba(240,165,0,.45)}
 .flag.ok{background:rgba(95,184,122,.15);color:var(--ok);border:1px solid rgba(95,184,122,.4)}
+.livetag{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);
+  padding:0 10px;align-self:center}
+.livetag::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok);
+  animation:blink 2.2s infinite}
+.livetag.off::before{background:var(--line);animation:none}
+tr.justin td{animation:flashin 2.4s ease-out}
+@keyframes flashin{0%{background:rgba(95,184,122,.28)}100%{background:transparent}}
 .nudge{display:flex;align-items:center;gap:4px;white-space:nowrap}
 .nudge .mini{height:28px;padding:0 8px;font-size:11.5px}
 .nval{font-size:12px;min-width:50px;text-align:center;font-weight:700}
@@ -417,6 +424,7 @@ td.c{font-family:"Courier Prime",monospace}
     <p class="sub" id="aSub"></p>
     <div class="toolbar">
       <button class="btn sm" id="aReload">↻ 새로고침</button>
+      <span id="aLive" class="livetag">자동 갱신 중</span>
       <button class="btn sm alt" id="aPreview">▶ 합본 들어보기</button>
       <button class="btn sm" id="aMp4">⤓ 본편 영상 받기 (MP4)</button>
       <button class="btn sm alt" id="aWav">⤓ 합본 음원만 (WAV)</button>
@@ -1572,7 +1580,7 @@ function voiceFor(l){
 async function openAdmin(){
   show("vAdmin");
   $("#aSub").textContent=`${PROJECT.title} — 대사 ${PROJECT.lines.length}줄 · 참가자 ${PROJECT.cast.length}명`;
-  await pull();drawAdmin();
+  await pull();drawAdmin();startAdminPoll();
 }
 function drawAdmin(){
   $("#aNote").innerHTML=online
@@ -1594,6 +1602,7 @@ function drawAdmin(){
       const p=PROJECT.cast.find(c=>c.team===tk&&c.chars.includes(l.char));
       const s=subs.find(x=>x.line_id===l.id);
       const tr=document.createElement("tr");
+      if(justIn.has(l.id))tr.className="justin";
       tr.innerHTML=`<td class="c">${l.id}</td><td class="c">${tc(l.s)}</td>
         <td><span class="chip" style="background:${chOf(l.char).color}">${esc(l.char)}</span></td>
         <td style="max-width:360px">${esc(l.text)}</td>
@@ -1715,7 +1724,44 @@ $("#aScan").onclick=async()=>{
       : `점검 끝 — <b style="color:var(--ok)">${Object.keys(scanRes).length}줄 모두 타이밍 좋습니다.</b>`);
   b.disabled=false;
 };
-$("#aReload").onclick=async()=>{await pull();drawAdmin()};
+$("#aReload").onclick=async()=>{await pull();drawAdmin();adminStamp=Date.now()};
+
+/* 선생님 화면도 실시간으로 — 코치가 올리면 15초 안에 표에 뜬다 */
+let adminTimer=0, adminStamp=0, adminSeen=new Set(), justIn=new Set();
+function startAdminPoll(){
+  if(adminTimer||!online)return;
+  adminStamp=Date.now();
+  adminSeen=new Set(subs.map(s=>s.line_id+":"+s.path));
+  adminTimer=setInterval(async()=>{
+    if($("#vAdmin").classList.contains("hide"))return;     // 타이밍 맞추기 화면이면 쉰다
+    const before=adminSeen;
+    await pull();
+    const now=new Set(subs.map(s=>s.line_id+":"+s.path));
+    const added=[...now].filter(k=>!before.has(k));
+    adminSeen=now; adminStamp=Date.now();
+    if(added.length){
+      justIn=new Set(added.map(k=>+k.split(":")[0]));
+      const y=scrollY;
+      drawAdmin();
+      scrollTo(0,y);                                        // 보던 자리 유지
+      const who=added.map(k=>{const id=+k.split(":")[0];
+        const l=lineById(id), s2=subs.find(x=>x.line_id===id);
+        return `${esc(s2?s2.person:"?")} → ${id}번 ${esc(l?l.char:"")}`;}).join(", ");
+      $("#aNote").innerHTML=`🆕 방금 올라왔습니다 — <b>${who}</b>`;
+      setTimeout(()=>{justIn=new Set();},3000);
+    }
+    tickLive();
+  },15000);
+  tickLive();
+  setInterval(tickLive,1000);
+}
+function tickLive(){
+  const el=$("#aLive"); if(!el)return;
+  if(!online){el.classList.add("off");el.textContent="자동 갱신 꺼짐 (Supabase 미연결)";return}
+  const sec=Math.round((Date.now()-adminStamp)/1000);
+  el.classList.remove("off");
+  el.textContent = sec<3 ? "방금 갱신됨" : `자동 갱신 중 · ${sec}초 전`;
+}
 
 let mixSkipped=[];
 /* 따로따로 녹음한 목소리를 자연스럽게 잇기 위한 다듬기
