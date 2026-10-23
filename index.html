@@ -1,0 +1,1999 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dubbing Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#12120f; --bg2:#1a1a16; --panel:#1f1f1a; --panel2:#262620;
+  --ink:#f0ece2; --dim:#938d7e; --line:#33332b;
+  --amber:#f0a500; --amber-soft:#3a2d08; --ok:#5fb87a; --rec:#e0453c; --cool:#5b9bd5;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",sans-serif;
+  -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;min-height:100vh}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+.mono{font-family:"Courier Prime",ui-monospace,Menlo,monospace}
+.hide{display:none!important}
+.gap{flex:1}
+
+.top{background:var(--bg2);border-bottom:1px solid var(--line);padding:0 18px;
+  display:flex;align-items:center;gap:14px;height:54px;flex:none}
+.brand{font-family:"Courier Prime",monospace;font-weight:700;font-size:13px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--amber);white-space:nowrap}
+.brand i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--rec);
+  margin-right:8px;vertical-align:1px;animation:blink 2.4s infinite}
+@keyframes blink{0%,45%{opacity:1}55%,100%{opacity:.25}}
+.top .ttl{font-size:13.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ghost{font-size:12.5px;color:var(--dim);border:1px solid var(--line);border-radius:4px;
+  padding:7px 12px;transition:.12s;white-space:nowrap}
+.ghost:hover{color:var(--ink);border-color:var(--amber)}
+
+.wrap{flex:1;overflow-y:auto;padding:26px 18px 70px;
+  background:radial-gradient(ellipse 760px 400px at 50% -60px,var(--amber-soft),transparent 70%)}
+.inner{max-width:1200px;margin:0 auto}
+.kicker{font-family:"Courier Prime",monospace;font-size:11px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--amber);margin:0 0 8px}
+h1{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
+.sub{color:var(--dim);font-size:14px;margin:0 0 20px;line-height:1.65}
+.note{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);
+  border-radius:4px;padding:13px 16px;font-size:13.5px;color:var(--dim);line-height:1.7;margin:0 0 20px}
+.note b{color:var(--ink)}
+/* 녹음 전 꼭 읽어야 하는 주의사항 */
+.bigwarn{
+  border:2px solid var(--rec);border-radius:7px;background:rgba(224,69,60,.07);
+  padding:16px 18px;margin:0 0 20px;
+}
+.bigwarn h3{
+  margin:0 0 11px;font-size:15.5px;color:#ff8d84;display:flex;align-items:center;gap:9px;
+}
+.bigwarn ol{margin:0;padding-left:21px;font-size:14px;line-height:1.75;color:var(--ink)}
+.bigwarn li+li{margin-top:7px}
+.bigwarn em{font-style:normal;color:var(--dim);font-size:13px;display:block;margin-top:2px}
+.bigwarn b{color:#ffd9d5}
+/* 더빙 데크 위 상시 경고 */
+.deckwarn{
+  display:flex;align-items:center;gap:9px;margin-top:11px;padding:10px 14px;border-radius:6px;
+  font-size:13px;line-height:1.5;border:1px solid var(--line);background:var(--panel);color:var(--dim);
+}
+.deckwarn.bad{border-color:var(--rec);background:rgba(224,69,60,.12);color:#ffb3ad}
+.deckwarn b{color:var(--ink)}
+.deckwarn.bad b{color:#fff}
+
+/* 로비 */
+.teamwrap{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:820px){.teamwrap{grid-template-columns:1fr}}
+.team{border:1px solid var(--line);border-radius:7px;background:var(--panel);overflow:hidden}
+.team>header{padding:14px 16px;border-bottom:1px solid var(--line);background:var(--panel2);
+  display:flex;align-items:center;gap:10px}
+.team h2{margin:0;font-size:16px}
+.team .rng{font-family:"Courier Prime",monospace;font-size:12px;color:var(--dim)}
+.swatch{width:12px;height:12px;border-radius:3px;flex:none}
+.people{padding:8px}
+.person{display:flex;align-items:center;gap:11px;width:100%;text-align:left;
+  padding:11px 12px;border-radius:5px;transition:.12s;border:1px solid transparent}
+.person:hover{background:var(--panel2);border-color:var(--amber)}
+.person .nm{font-size:14.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.person .pr{font-family:"Courier Prime",monospace;font-size:11.5px;color:var(--dim);white-space:nowrap}
+.person .pr.full{color:var(--ok)}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.chip{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap;color:#17150d}
+.vacant{margin:8px;padding:11px 12px;border:1px dashed var(--rec);border-radius:5px;
+  font-size:12.5px;color:var(--dim);line-height:1.6}
+
+/* 모드 전환 */
+.modes{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;
+  background:var(--bg);margin-bottom:16px}
+.modes button{padding:11px 22px;font-size:13.5px;font-weight:700;color:var(--dim);transition:.12s;
+  display:flex;align-items:center;gap:8px}
+.modes button+button{border-left:1px solid var(--line)}
+.modes button:hover{color:var(--ink);background:var(--panel)}
+.modes button.on{background:var(--amber);color:#17150d}
+.modes button.on.dub{background:var(--rec);color:#fff}
+
+/* 부스 */
+.booth{display:grid;grid-template-columns:1fr 460px;gap:16px;align-items:start}
+@media(max-width:1020px){.booth{grid-template-columns:1fr}}
+.stagebox{position:relative;border:1px solid var(--line);border-radius:7px;overflow:hidden;
+  background:#000;box-shadow:0 20px 50px -26px #000}
+.stagebox video{display:block;width:100%;aspect-ratio:16/9;background:#000}
+.ovl{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;
+  background:rgba(8,8,6,.42);text-align:center}
+.ovl.off{display:none}
+.cd{font-family:"Courier Prime",monospace;font-size:88px;font-weight:700;color:var(--amber);line-height:1;
+  text-shadow:0 0 18px rgba(0,0,0,.9),0 0 40px rgba(240,165,0,.5)}
+.cd small{display:block;font-size:13px;letter-spacing:.14em;color:var(--ink);margin-top:12px;
+  text-shadow:0 1px 6px rgba(0,0,0,.95);max-width:90%;margin-left:auto;margin-right:auto;line-height:1.5}
+.nowline{position:absolute;left:0;right:0;bottom:16px;text-align:center;padding:0 18px;pointer-events:none}
+.nowline span{display:inline-block;background:rgba(10,10,8,.85);border-radius:5px;padding:9px 16px;
+  font-size:17px;line-height:1.45;max-width:94%}
+.nowline em{display:block;font-style:normal;font-family:"Courier Prime",monospace;
+  font-size:13px;color:var(--amber);margin-top:5px}
+.lamp{position:absolute;top:12px;left:12px;display:none;align-items:center;gap:8px;
+  background:rgba(224,69,60,.94);color:#fff;border-radius:3px;padding:5px 11px;
+  font-family:"Courier Prime",monospace;font-size:11px;font-weight:700;letter-spacing:.14em}
+.lamp.on{display:flex}
+.lamp i{width:8px;height:8px;border-radius:50%;background:#fff;animation:blink 1s infinite}
+.shad{position:absolute;inset:0;display:none;place-items:center;background:rgba(8,8,6,.8);text-align:center}
+.shad.on{display:grid}
+/* 큐 사인 : 지금 말하라는 신호 */
+.cuego{position:absolute;inset:0;display:none;place-items:center;pointer-events:none;
+  font-size:58px;font-weight:800;color:#fff;letter-spacing:.04em;
+  text-shadow:0 0 30px rgba(224,69,60,.9),0 2px 10px rgba(0,0,0,.6)}
+.cuego.on{display:grid;animation:pop .55s ease-out}
+@keyframes pop{0%{transform:scale(.6);opacity:0}25%{transform:scale(1.12);opacity:1}100%{transform:scale(1);opacity:0}}
+.cuebar{position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(255,255,255,.12)}
+.cuebar>span{display:block;height:100%;width:0;background:var(--rec)}
+.shad b{font-size:26px;color:var(--cool);display:block}
+.shad small{color:var(--dim);font-size:13px;display:block;margin-top:8px}
+
+/* 타임라인 */
+.tl{position:relative;height:38px;margin-top:11px;border:1px solid var(--line);border-radius:6px;
+  background:var(--panel);overflow:hidden;cursor:pointer}
+.tl .blk{position:absolute;top:7px;height:24px;border-radius:3px;opacity:.26;transition:.12s}
+.tl .blk.my{opacity:1;box-shadow:0 0 0 1px rgba(0,0,0,.35) inset}
+.tl .blk.my:hover{filter:brightness(1.25)}
+.tl .blk.done::after{content:"";position:absolute;inset:auto 0 0 0;height:3px;background:var(--ok)}
+.tl .now{position:absolute;top:0;bottom:0;width:2px;background:var(--amber);box-shadow:0 0 8px var(--amber);z-index:3}
+/* 우리 팀이 맡은 구간 */
+.tl .band{position:absolute;top:0;bottom:0;background:rgba(240,165,0,.09);
+  border-left:1px solid rgba(240,165,0,.45);border-right:1px solid rgba(240,165,0,.45);pointer-events:none}
+.tl .blk{z-index:2}
+.tl .blk.other{opacity:.14}
+.tlkey{display:flex;gap:14px;flex-wrap:wrap;margin-top:7px;font-size:11.5px;color:var(--dim)}
+.tlkey span{display:flex;align-items:center;gap:5px}
+.tlkey i{width:10px;height:10px;border-radius:2px;display:inline-block}
+
+.deck{margin-top:11px;background:var(--panel);border:1px solid var(--line);border-radius:6px;
+  padding:12px 14px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.key{min-width:38px;height:38px;padding:0 12px;border:1px solid var(--line);border-radius:5px;
+  background:var(--bg);display:inline-flex;align-items:center;gap:7px;justify-content:center;
+  font-size:13px;color:var(--dim);transition:.12s}
+.key:hover{border-color:var(--amber);color:var(--amber)}
+.key[disabled]{opacity:.3;cursor:not-allowed}
+.key[disabled]:hover{border-color:var(--line);color:var(--dim)}
+.btn{background:var(--amber);color:#17150d;font-weight:700;font-size:14px;padding:11px 20px;
+  border-radius:5px;transition:.12s}
+.btn:hover{filter:brightness(1.1)}
+.btn[disabled]{opacity:.35;cursor:not-allowed;filter:none}
+.btn.alt{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+.btn.alt:hover{border-color:var(--amber);filter:none}
+.btn.sm{font-size:12.5px;padding:9px 15px}
+.tag{font-family:"Courier Prime",monospace;font-size:10.5px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase}
+select.sel{font-family:"Courier Prime",monospace;font-size:11.5px;font-weight:700;background:var(--bg);
+  border:1px solid var(--line);border-radius:4px;padding:8px;color:var(--ink)}
+label.sw{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--dim);cursor:pointer}
+label.sw input{accent-color:var(--amber)}
+.level{height:6px;border-radius:3px;background:var(--bg);overflow:hidden;border:1px solid var(--line);flex:1;min-width:80px}
+.level>span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ok),var(--amber) 70%,var(--rec));transition:width .06s}
+.status{font-size:12.5px;color:var(--dim);margin-top:9px;min-height:19px;line-height:1.55}
+.status b{color:var(--amber)}
+
+/* 대사 카드 */
+.side{background:var(--panel);border:1px solid var(--line);border-radius:7px;overflow:hidden;
+  display:flex;flex-direction:column}
+.side>header{padding:12px 15px;border-bottom:1px solid var(--line);background:var(--panel2);
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.side h3{margin:0;font-family:"Courier Prime",monospace;font-size:11px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--dim)}
+.cue{border-bottom:1px solid var(--line);padding:14px 15px;transition:.14s}
+.cue:last-child{border-bottom:0}
+.cue.cur{background:var(--amber-soft)}
+.cue .hd{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.cue .tc{font-family:"Courier Prime",monospace;font-size:11px;color:var(--dim)}
+.cue .en{font-size:15.5px;line-height:1.5}
+.cue .ipa{font-family:"Courier Prime",monospace;font-size:13px;color:var(--amber);
+  margin-top:6px;line-height:1.55;word-break:break-word}
+.cue .ko{font-size:12.5px;color:var(--dim);margin-top:5px;line-height:1.5}
+.cue .row{display:flex;gap:6px;margin-top:11px;align-items:center;flex-wrap:wrap}
+.mini{height:32px;padding:0 11px;border:1px solid var(--line);border-radius:4px;background:var(--bg);
+  font-size:12px;color:var(--dim);display:inline-flex;align-items:center;gap:6px;transition:.12s}
+.mini:hover{border-color:var(--amber);color:var(--amber)}
+.mini.rec{border-color:#5a2b28;color:#e98078}
+.mini.rec:hover{background:var(--rec);border-color:var(--rec);color:#fff}
+.mini.live{background:var(--rec);border-color:var(--rec);color:#fff;animation:blink 1s infinite}
+.mini.del:hover{border-color:var(--rec);color:var(--rec)}
+.mini[disabled]{opacity:.28;cursor:not-allowed}
+.mini[disabled]:hover{border-color:var(--line);color:var(--dim)}
+.st{font-family:"Courier Prime",monospace;font-size:10.5px;letter-spacing:.1em;margin-left:auto;white-space:nowrap}
+.st.none{color:var(--dim);opacity:.55}
+.st.local{color:var(--amber)}
+.st.up{color:var(--ok)}
+
+.wave{margin-top:10px;border:1px solid var(--line);border-radius:5px;background:var(--bg);overflow:hidden}
+.wave .plot{position:relative}
+.wave canvas{display:block;width:100%;height:62px}
+.wave .lbl{position:absolute;left:7px;font-size:10px;font-family:"Courier Prime",monospace;
+  letter-spacing:.08em;pointer-events:none;text-shadow:0 1px 4px #000,0 0 6px #000}
+.wave .lbl.o{top:3px;color:#cfc8b6}
+.wave .lbl.m{bottom:3px;color:var(--amber)}
+.wave .hint{font-size:11.5px;color:var(--dim);padding:6px 8px;line-height:1.5;border-top:1px solid var(--line)}
+.tks{margin-top:11px;display:flex;flex-direction:column;gap:6px}
+.tkrow{display:flex;gap:6px;align-items:center}
+.tk{height:34px;padding:0 11px;border:1px solid var(--line);border-radius:4px;background:var(--bg);
+  font-size:12px;color:var(--dim);display:inline-flex;align-items:center;gap:6px;transition:.12s;flex:none}
+.tk:hover{border-color:var(--amber);color:var(--amber)}
+.tkplay{flex:1;justify-content:flex-start;font-family:"Courier Prime",monospace;min-width:0}
+.tkrow.on .tkplay{border-color:var(--amber);color:var(--amber);background:var(--amber-soft)}
+.tkpick.on{background:var(--amber);border-color:var(--amber);color:#17150d}
+.tkdel:hover{border-color:var(--rec);color:var(--rec)}
+.tkhint{font-size:11.5px;color:var(--dim);opacity:.75;margin-top:7px;line-height:1.5}
+@media(pointer:coarse){.tk{height:44px;font-size:13px}}
+
+/* 내 대사 아래에 붙는 크레딧 소감 */
+.notebox{border-top:1px solid var(--line);background:var(--panel2);padding:14px 15px 15px}
+.notebox h4{margin:0 0 6px;font-size:13.5px;color:var(--amber);font-weight:700}
+.notebox p{margin:0 0 11px;font-size:12.5px;color:var(--dim);line-height:1.6}
+.notebox p b{color:var(--ink)}
+.noterow{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.noterow+.noterow{margin-top:9px}
+.notebox .mono{font-size:12.5px;color:var(--rec);font-weight:700}
+
+.prog{display:flex;align-items:center;gap:10px;width:100%}
+.prog .track{flex:1;height:7px;border-radius:4px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.prog .track>span{display:block;height:100%;background:var(--ok);width:0;transition:width .25s}
+.prog .num{font-family:"Courier Prime",monospace;font-size:11.5px;color:var(--dim);white-space:nowrap}
+
+/* 관리자 */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:10px 11px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-family:"Courier Prime",monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+tr:hover td{background:var(--panel)}
+td.c{font-family:"Courier Prime",monospace}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px}
+.dot.y{background:var(--ok)}.dot.n{background:var(--line)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+.flag{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:3px;margin-left:6px}
+.flag.bad{background:rgba(224,69,60,.18);color:#ff9a92;border:1px solid rgba(224,69,60,.5)}
+.flag.warn{background:rgba(240,165,0,.15);color:var(--amber);border:1px solid rgba(240,165,0,.45)}
+.flag.ok{background:rgba(95,184,122,.15);color:var(--ok);border:1px solid rgba(95,184,122,.4)}
+.nudge{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.nudge .mini{height:28px;padding:0 8px;font-size:11.5px}
+.nval{font-size:12px;min-width:50px;text-align:center;font-weight:700}
+.tapline{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:13.5px}
+.tapline.cur{background:var(--amber-soft)}
+
+/* 손가락으로 누르는 기기 — 터치 목표를 44px 이상으로 */
+@media (pointer:coarse){
+  .mini{height:44px;padding:0 15px;font-size:13.5px}
+  .key{height:46px;padding:0 15px;font-size:14px}
+  .modes button{padding:15px 24px;font-size:14.5px}
+  .person{padding:15px 12px}
+  select.sel{padding:12px 10px;font-size:13px}
+  .btn{padding:14px 22px}
+  .cue{padding:16px 15px}
+  .cue .row{gap:8px}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="brand"><i></i>Dubbing Room</span>
+  <span class="ttl" id="hTitle"></span>
+  <span class="gap"></span>
+  <button class="ghost hide" id="hBack">← 참가자 목록</button>
+</header>
+
+<main class="wrap"><div class="inner">
+
+  <!-- ===== 로비 ===== -->
+  <section id="vLobby" class="hide">
+    <p class="kicker">Who are you?</p>
+    <h1 id="lTitle"></h1>
+    <p class="sub" id="lSub"></p>
+    <div class="bigwarn">
+      <h3>🎧 녹음 전에 꼭 확인하세요</h3>
+      <ol>
+        <li><b>반드시 이어폰(또는 헤드폰)을 끼고 녹음하세요.</b>
+          <em>스피커로 들으면 흘러나오는 배경음악이 마이크에 같이 녹음돼, 합칠 때 음악이 두 겹으로 겹칩니다.</em></li>
+        <li><b>더빙 모드의 [영상 소리]는 "배경음악만"으로 두세요.</b>
+          <em>"원본 그대로"로 녹음하면 원어민 대사가 내 목소리와 함께 녹음됩니다. 기본값이 "배경음악만" 이니 그대로 두시면 됩니다.</em></li>
+      </ol>
+    </div>
+    <div class="note" id="lNote"></div>
+    <div class="teamwrap" id="lTeams"></div>
+  </section>
+
+  <!-- ===== 부스 ===== -->
+  <section id="vBooth" class="hide">
+    <p class="kicker" id="bKick"></p>
+    <h1 id="bName"></h1>
+    <p class="sub" id="bSub"></p>
+
+    <div class="modes">
+      <button id="mPr" class="on">🎧 연습 모드</button>
+      <button id="mDu" class="dub">🎙 더빙 모드</button>
+    </div>
+
+    <div class="booth">
+      <div>
+        <div class="stagebox">
+          <video id="vid" playsinline preload="auto"></video>
+          <div class="lamp" id="lamp"><i></i><span>REC</span></div>
+          <div class="ovl off" id="ovl"><div class="cd" id="cdNum">3<small id="cdTxt">준비</small></div></div>
+          <div class="shad" id="shad"><div><b>따라 말하세요</b><small id="shadTxt"></small></div></div>
+          <div class="cuego" id="cueGo">지금!</div>
+          <div class="cuebar"><span id="cueFill"></span></div>
+          <div class="nowline" id="nowline"></div>
+        </div>
+
+        <!-- 내 구간 타임라인 -->
+        <div class="tl" id="tl"><div class="now" id="tlNow" style="left:0"></div></div>
+        <div class="tlkey">
+          <span><i id="tlKeyMy" style="background:var(--amber)"></i>내 대사</span>
+          <span><i style="background:var(--dim);opacity:.4"></i>우리 팀 다른 사람</span>
+          <span><i style="background:var(--dim);opacity:.14"></i>다른 팀</span>
+          <span><i style="background:var(--ok)"></i>녹음 완료</span>
+          <span id="tlRange" class="mono"></span>
+        </div>
+
+        <!-- 연습 데크 -->
+        <div class="deck" id="deckPr">
+          <button class="key" id="pFlow">▶ 영상 전체 보기</button>
+          <button class="key" id="pTeam">▶ 우리 팀 구간</button>
+          <button class="key" id="pMine">▶ 내 대사만 이어서</button>
+          <span class="tag">속도</span>
+          <select class="sel" id="pRate">
+            <option value="0.5">0.5× 아주 느리게</option>
+            <option value="0.65">0.65×</option>
+            <option value="0.8">0.8×</option>
+            <option value="1" selected>1.0× 원속도</option>
+          </select>
+          <span class="tag">반복</span>
+          <select class="sel" id="pLoop"><option>1</option><option>2</option><option selected>3</option><option>5</option></select>
+          <label class="sw"><input type="checkbox" id="pIpa" checked> 발음기호</label>
+          <label class="sw"><input type="checkbox" id="pKo" checked> 번역</label>
+          <span class="gap"></span>
+          <button class="key" id="pStop">■ 정지</button>
+        </div>
+
+        <!-- 더빙 데크 -->
+        <div class="deck hide" id="deckDu">
+          <button class="key" id="dMix">▶ 지금까지 더빙 들어보기</button>
+          <span class="tag">영상 소리</span>
+          <select class="sel" id="dMon">
+            <option value="bgm">배경음악만</option>
+            <option value="mute">음소거</option>
+            <option value="orig">원본 그대로</option>
+          </select>
+          <label class="sw" title="3·2·1 신호음과 '지금!' 표시"><input type="checkbox" id="dCue" checked> 큐 사인</label>
+          <label class="sw" title="녹음 직전 앞 대사를 들려줍니다. 팀원이 녹음해뒀으면 그 목소리로, 아직이면 원음으로."><input type="checkbox" id="dLead" checked> 앞 대사 듣고 시작</label>
+          <label class="sw"><input type="checkbox" id="dIpa"> 발음기호</label>
+          <span class="tag">mic</span><span class="level"><span id="lvl"></span></span>
+          <button class="key" id="dStop">■ 정지</button>
+        </div>
+
+        <div class="deckwarn hide" id="dWarn"></div>
+
+        <div class="deck hide" id="deckProg">
+          <div class="prog">
+            <span class="num" id="pNum"></span>
+            <span class="track"><span id="pFill"></span></span>
+            <button class="btn sm alt" id="dUpAll">☁ 안 올라간 것 올리기</button>
+          </div>
+        </div>
+        <p class="status" id="bStat"></p>
+      </div>
+
+      <aside class="side">
+        <header>
+          <h3 id="sideTtl">내 대사</h3>
+          <span class="chips" id="bChips"></span>
+          <span class="gap"></span>
+          <span class="tag" id="bCount"></span>
+        </header>
+        <div id="bCues"></div>
+        <div class="notebox hide" id="deckNote">
+          <h4>🎤 크레딧 소감</h4>
+          <p>영상 맨 끝 크레딧이 올라갈 때 들어갑니다. <b>10~15초</b> 정도로 짧게.</p>
+          <div class="noterow">
+            <button class="mini rec" id="nRec">● 소감 녹음</button>
+            <button class="mini" id="nPlay" disabled>▶ 들어보기</button>
+            <button class="mini del" id="nDel" disabled>🗑 지우기</button>
+          </div>
+          <div class="noterow">
+            <span class="st none" id="nSt">아직 없음</span>
+            <span class="gap"></span>
+            <span class="mono" id="nTime"></span>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===== 관리자 ===== -->
+  <input type="file" id="pickAudio" accept="audio/*,video/mp4" class="hide">
+
+  <section id="vAdmin" class="hide">
+    <p class="kicker">Control room</p>
+    <h1>전체 현황</h1>
+    <p class="sub" id="aSub"></p>
+    <div class="toolbar">
+      <button class="btn sm" id="aReload">↻ 새로고침</button>
+      <button class="btn sm alt" id="aPreview">▶ 합본 들어보기</button>
+      <button class="btn sm" id="aMp4">⤓ 본편 영상 받기 (MP4)</button>
+      <button class="btn sm alt" id="aWav">⤓ 합본 음원만 (WAV)</button>
+      <button class="btn sm alt" id="aZip">⤓ 개별 녹음 모아서 (ZIP)</button>
+      <button class="btn sm alt" id="aScan">🔎 타이밍 일괄 점검</button>
+      <button class="btn sm alt" id="aTime">⏱ 타이밍 맞추기</button>
+    </div>
+    <div class="note" id="aNote"></div>
+    <div id="aBar" class="hide" style="margin:0 0 16px">
+      <div style="height:8px;border-radius:4px;background:var(--panel);border:1px solid var(--line);overflow:hidden">
+        <span id="aFill" style="display:block;height:100%;width:0;background:var(--amber);transition:width .2s"></span>
+      </div>
+      <p id="aStat" style="font-size:12.5px;color:var(--dim);margin:7px 0 0"></p>
+    </div>
+    <div id="aCast"></div>
+    <audio id="aPrev" controls style="width:100%;margin-top:16px;display:none"></audio>
+  </section>
+
+  <!-- ===== 타이밍 ===== -->
+  <section id="vTime" class="hide">
+    <p class="kicker">Timing</p>
+    <h1>타이밍 맞추기</h1>
+    <p class="sub">영상을 틀어놓고 대사가 <b>시작될 때마다 스페이스바</b>를 누르세요. 끝까지 찍은 뒤 내려받아 <code>segments.js</code> 의 <code>lines</code> 를 통째로 바꾸면 됩니다.</p>
+    <div class="stagebox" style="max-width:640px;margin-bottom:12px">
+      <video id="tvid" playsinline controls></video>
+    </div>
+    <div class="deck">
+      <button class="btn" id="tStart">▶ 처음부터</button>
+      <button class="btn alt" id="tTap">⎵ 지금 대사 시작</button>
+      <button class="btn alt" id="tUndo">↩ 하나 취소</button>
+      <button class="btn alt" id="tSave">⤓ 새 lines 내려받기</button>
+      <button class="ghost" id="tBack">← 현황으로</button>
+    </div>
+    <div style="margin-top:14px;border:1px solid var(--line);border-radius:6px;background:var(--panel);max-height:50vh;overflow:auto" id="tList"></div>
+  </section>
+
+</div></main>
+
+<script src="config.js"></script>
+<script src="segments.js"></script>
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
+
+/* ===================== 기본 ===================== */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const PRE=3.0, TAIL=0.45;   // 녹음 전 3초 카운트 / 대사 뒤 여유
+const online=!!(CONFIG.SUPABASE_URL&&CONFIG.SUPABASE_ANON_KEY);
+const sb=online?createClient(CONFIG.SUPABASE_URL,CONFIG.SUPABASE_ANON_KEY):null;
+const isAdmin=new URLSearchParams(location.search).get("admin")===CONFIG.ADMIN_KEY;
+
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const mmss=t=>`${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,"0")}`;
+const tc=t=>`${Math.floor(t/60)}:${(t%60).toFixed(1).padStart(4,"0")}`;
+const chOf=c=>PROJECT.chars[c]||{color:"#888",en:c};
+const linesOf=p=>PROJECT.lines.filter(l=>l.team===p.team&&p.chars.includes(l.char));
+const teamLines=t=>PROJECT.lines.filter(l=>l.team===t);
+const lineById=id=>PROJECT.lines.find(l=>l.id===id);
+
+/* takes[대사번호] = { list:[{blob,url,dur}], chosen:고른번호 }
+   한 대사에 여러 번 녹음해두고 들어보며 고르거나 지울 수 있다. */
+let who=null, subs=[], notes=[], takes={}, mode="practice";
+const tkList=id=>takes[id]?.list||[];
+const tkCur=id=>{const t=takes[id];
+  return t&&t.list.length?t.list[Math.min(t.chosen,t.list.length-1)]:null};
+function addTake(id,blob,dur){
+  if(!takes[id])takes[id]={list:[],chosen:0};
+  takes[id].list.push({blob,url:URL.createObjectURL(blob),dur:dur||0});
+  takes[id].chosen=takes[id].list.length-1;
+}
+const vid=$("#vid");
+vid.preservesPitch=vid.mozPreservesPitch=vid.webkitPreservesPitch=true;
+
+$("#hTitle").textContent=PROJECT.title||"";
+$("#hBack").onclick=()=>{stopAll();stopPoll();openLobby();};
+const say=(h,keep)=>{const el=$("#bStat");el.innerHTML=h;
+  if(!keep&&h)setTimeout(()=>{if(el.innerHTML===h)el.innerHTML=""},7000);};
+
+/* ===================== IndexedDB ===================== */
+let db=null;
+const idb=()=>new Promise(r=>{
+  if(db)return r(db);
+  const q=indexedDB.open("dubroom",1);
+  q.onupgradeneeded=()=>q.result.createObjectStore("takes");
+  q.onsuccess=()=>{db=q.result;r(db)}; q.onerror=()=>r(null);
+});
+const kOf=id=>`${PROJECT.key}:${who.person}:${id}`;
+async function saveTakes(id){
+  const t=takes[id];
+  if(!t||!t.list.length)return tDel(kOf(id));
+  return tPut(kOf(id),{blobs:t.list.map(x=>x.blob),durs:t.list.map(x=>x.dur),chosen:t.chosen});
+}
+/* 저장이 '끝날 때까지' 기다리고, 실패하면 알린다.
+   예전에는 실패해도 '녹음됨' 이라고 표시돼 새로고침하면 사라졌다. */
+function tPut(k,v){return new Promise(async(res,rej)=>{
+  const d=await idb(); if(!d)return rej(new Error("이 브라우저에서 저장소를 쓸 수 없습니다"));
+  try{
+    const tx=d.transaction("takes","readwrite");
+    tx.objectStore("takes").put(v,k);
+    tx.oncomplete=()=>res(true);
+    tx.onerror=tx.onabort=()=>rej(tx.error||new Error("저장 실패(용량 부족일 수 있습니다)"));
+  }catch(e){rej(e)}
+})}
+function tDel(k){return new Promise(async(res)=>{
+  const d=await idb(); if(!d)return res(false);
+  try{
+    const tx=d.transaction("takes","readwrite");
+    tx.objectStore("takes").delete(k);
+    tx.oncomplete=()=>res(true); tx.onerror=tx.onabort=()=>res(false);
+  }catch(e){res(false)}
+})}
+async function tAll(){const d=await idb();if(!d)return{};return new Promise(r=>{
+  const o={},q=d.transaction("takes").objectStore("takes").openCursor();
+  q.onsuccess=e=>{const c=e.target.result;if(!c)return r(o);o[c.key]=c.value;c.continue()};q.onerror=()=>r({})});}
+
+/* ===================== 영상 ===================== */
+let ready=false;
+vid.addEventListener("loadedmetadata",()=>ready=true);
+vid.addEventListener("error",()=>{
+  if(ready)return;
+  say(`영상 <b>${esc(PROJECT.video)}</b> 을 못 찾았습니다. 아래에서 직접 고르세요.`,1);
+  const f=document.createElement("input");f.type="file";f.accept="video/*";
+  f.style.cssText="display:block;margin:10px 0;font-size:13px";
+  f.onchange=e=>{const x=e.target.files[0];if(x){vid.src=URL.createObjectURL(x);f.remove();say("")}};
+  $("#bStat").after(f);
+});
+const bgm=PROJECT.videoBgm?Object.assign(new Audio(PROJECT.videoBgm),{preload:"auto"}):null;
+
+/* 파형 비교용 — 목소리만 분리한 트랙을 한 번만 받아 둔다 */
+const VOCALS = (PROJECT.videoVocals || (PROJECT.videoBgm||"").replace("_bgm","_vocals")) || null;
+let vocalBuf=null, vocalTried=false;
+async function getVocals(){
+  if(vocalBuf||vocalTried)return vocalBuf;
+  vocalTried=true;
+  try{
+    const ac=new (window.AudioContext||webkitAudioContext)();
+    vocalBuf=await ac.decodeAudioData(await (await fetch(VOCALS)).arrayBuffer());
+    ac.close();
+  }catch(e){ console.warn("원본 목소리 트랙 없음",e) }
+  return vocalBuf;
+}
+/* 구간을 cols 개 막대로 요약 (각자 최댓값으로 정규화) */
+function envelope(buf,from,to,cols){
+  const d=buf.getChannelData(0), sr=buf.sampleRate;
+  const a=Math.max(0,Math.floor(from*sr)), b=Math.min(d.length,Math.floor(to*sr));
+  const out=new Float32Array(cols); if(b<=a)return out;
+  const step=(b-a)/cols;
+  let peak=0;
+  for(let i=0;i<cols;i++){
+    const s0=a+Math.floor(i*step), s1=Math.min(b,a+Math.floor((i+1)*step));
+    let m=0; for(let j=s0;j<s1;j++){const v=Math.abs(d[j]); if(v>m)m=v}
+    out[i]=m; if(m>peak)peak=m;
+  }
+  if(peak>0)for(let i=0;i<cols;i++)out[i]/=peak;
+  return out;
+}
+/* 배경음악 트랙이 없으면 '배경음악만' 을 고를 수 없게 하고 음소거를 기본으로 */
+if(bgm){
+  /* 배경음악 트랙이 있으면 '음소거' 는 쓸 일이 없다 — 배경음악만으로 충분하다 */
+  const o=$("#dMon").querySelector('option[value="mute"]'); o&&o.remove();
+  $("#dMon").value="bgm";
+}else{
+  /* 트랙이 없는 프로젝트에서는 원본 대사를 끄는 유일한 방법이므로 음소거를 남긴다 */
+  const o=$("#dMon").querySelector('option[value="bgm"]'); o&&o.remove();
+  $("#dMon").value="mute";
+}
+/* 영상과 배경음악은 서로 다른 재생기라 조금씩 어긋난다. 매 프레임 확인해 맞춰 준다. */
+function bgmStart(at){ if(!bgm)return; bgm.currentTime=Math.max(0,at); bgm.playbackRate=vid.playbackRate; bgm.play().catch(()=>{}); }
+function bgmSync(t){
+  if(!bgm||bgm.paused)return;
+  if(Math.abs(bgm.currentTime-t)>0.12) bgm.currentTime=t;
+}
+const useBgm=()=>bgm&&$("#dMon").value==="bgm";
+
+function show(v){
+  ["vLobby","vBooth","vAdmin","vTime"].forEach(x=>$("#"+x).classList.toggle("hide",x!==v));
+  $("#hBack").classList.toggle("hide",v!=="vBooth");
+  scrollTo(0,0);
+}
+
+/* ===================== 로비 ===================== */
+async function openLobby(){
+  show("vLobby");
+  $("#lTitle").textContent=PROJECT.title;
+  $("#lSub").textContent=PROJECT.subtitle||"";
+  $("#lNote").innerHTML=online
+    ? `이름을 누르면 <b>내 대사만</b> 모아서 보여주고, 타임라인에 <b>내 구간이 표시</b>됩니다.<br>
+       <b>연습 모드</b>에서 발음기호 보며 느리게 듣고, 익숙해지면 <b>더빙 모드</b>로 넘어가 녹음하세요. 몇 번이든 지우고 다시 할 수 있습니다.
+       ${PROJECT.videoBgm?"":"<br>소리가 섞이지 않게 <b>이어폰</b>을 꼭 껴 주세요."}
+`
+    : `<b>연습 모드</b> — config.js 에 Supabase 주소가 비어 있어 자동 업로드만 안 됩니다. 연습·녹음·듣기는 전부 됩니다.`;
+  /* 휴대폰 안내는 연결 여부와 상관없이 항상 */
+  if(matchMedia("(pointer:coarse)").matches)
+    $("#lNote").innerHTML+=`<br><br>📱 <b>휴대폰으로 하시는 분</b> — <b>이어폰을 꼭 끼고</b> 그대로 녹음하면 됩니다.
+      마이크 허용을 물어보면 '허용' 을 눌러주세요.`;
+  await pull();
+  const tw=$("#lTeams");tw.innerHTML="";
+  for(const [tk,t] of Object.entries(PROJECT.teams)){
+    const cast=PROJECT.cast.filter(c=>c.team===tk);
+    const covered=new Set(cast.flatMap(c=>c.chars));
+    const missing=[...new Set(teamLines(tk).map(l=>l.char))].filter(c=>!covered.has(c));
+    const box=document.createElement("div");box.className="team";
+    box.innerHTML=`<header><span class="swatch" style="background:${t.color}"></span>
+        <h2>${esc(t.label)}</h2><span class="gap"></span>
+        <span class="rng">${mmss(t.start)} – ${mmss(t.end)} · ${teamLines(tk).length}줄</span></header>
+      <div class="people"></div>
+      ${missing.length?`<div class="vacant">⚠ <b style="color:var(--ink)">${missing.map(esc).join(", ")}</b> 를 맡을 사람이 아직 없습니다.
+        정해지면 segments.js 의 cast 에 한 줄만 추가하면 됩니다.</div>`:""}`;
+    const pl=box.querySelector(".people");
+    for(const c of cast){
+      const my=linesOf(c), done=my.filter(l=>subs.some(s=>s.line_id===l.id)).length;
+      const b=document.createElement("button");b.className="person";
+      b.innerHTML=`<span class="nm">${esc(c.person)}</span>
+        <span class="chips">${c.chars.map(x=>`<span class="chip" style="background:${chOf(x).color}">${esc(x)}</span>`).join("")}</span>
+        <span class="pr ${done===my.length?"full":""}">${done}/${my.length}</span>`;
+      b.onclick=()=>openBooth(c);
+      pl.append(b);
+    }
+    tw.append(box);
+  }
+}
+
+/* ===================== 부스 ===================== */
+async function openBooth(p){
+  who=p; show("vBooth"); setMode("practice");
+  const t=PROJECT.teams[p.team];
+  $("#bKick").textContent=`${t.label} · ${mmss(t.start)}–${mmss(t.end)}`;
+  $("#bName").textContent=p.person;
+  $("#bChips").innerHTML=p.chars.map(x=>`<span class="chip" style="background:${chOf(x).color}">${esc(x)}</span>`).join("");
+  $("#tlRange").textContent=`영상 전체 0:00–${mmss(PROJECT.dubEnd)} · 우리 팀 ${mmss(t.start)}–${mmss(t.end)}`;
+  $("#tlKeyMy").style.background=p.chars.length===1
+    ? chOf(p.chars[0]).color
+    : `linear-gradient(90deg,${p.chars.map(c=>chOf(c).color).join(",")})`;
+  if(!vid.src)vid.src=PROJECT.video;
+  const stored=await tAll(); takes={};
+  for(const l of linesOf(p)){
+    const v=stored[kOf(l.id)];
+    if(!v)continue;
+    if(v.blobs&&v.blobs.length)                       // 새 형식 : 여러 테이크
+      takes[l.id]={list:v.blobs.map((b,i)=>({blob:b,url:URL.createObjectURL(b),dur:(v.durs||[])[i]||0})),
+                   chosen:Math.min(v.chosen||0,v.blobs.length-1)};
+    else if(v instanceof Blob)                        // 예전 형식 : 하나뿐
+      takes[l.id]={list:[{blob:v,url:URL.createObjectURL(v),dur:0}],chosen:0};
+  }
+  drawTL(); drawCues(); await loadNote(); startPoll();
+}
+
+function setMode(m){
+  stopAll(); mode=m;
+  const pr=m==="practice";
+  $("#mPr").classList.toggle("on",pr);
+  $("#mDu").classList.toggle("on",!pr);
+  $("#deckPr").classList.toggle("hide",!pr);
+  $("#deckDu").classList.toggle("hide",pr);
+  $("#deckProg").classList.toggle("hide",pr);
+  $("#deckNote").classList.toggle("hide",pr);
+  $("#dWarn").classList.toggle("hide",pr);
+  if(!pr)drawWarn();
+  $("#sideTtl").textContent=pr?"내 대사 · 연습":"내 대사 · 녹음";
+  $("#bSub").innerHTML=pr
+    ? `발음기호를 보면서 <b>느린 속도</b>로 듣고 따라 해 보세요. <b>🔁 반복</b> 은 정한 횟수만큼 돌려주고,
+       <b>🗣 섀도잉</b> 은 한 번 들려준 뒤 그만큼 비워 줍니다. 준비되면 위에서 <b>더빙 모드</b>로 넘어가세요.`
+    : `한 줄씩 <b>● 녹음</b> 을 누르면 ${PRE}초 세어준 뒤 그 대사 자리에서 영상이 돌아갑니다.
+       녹음은 바로 자동 저장·업로드되고, 마음에 안 들면 <b>🗑 지우고</b> 다시 찍으면 됩니다.<br>
+       <b>▶ 원본 대사</b> 는 원어민 발음 확인용(설정과 상관없이 항상 원본), <b>▶ 내 것</b> 은 내 목소리만,
+       <b>🎬 영상에 맞춰</b> 는 영상과 겹쳐 틀어 입이 맞는지 보는 용도입니다.`;
+  if(who)drawCues();
+}
+$("#mPr").onclick=()=>setMode("practice");
+$("#mDu").onclick=()=>setMode("dub");
+
+/* ---- 타임라인 ---- */
+/* 타임라인은 '영상 전체' 를 보여준다. 내 구간만 보면 앞뒤 맥락을 알 수 없다.
+   우리 팀이 맡은 구간은 뒤에 띠를 깔아 구분한다. */
+const FULL=()=>({start:0,end:PROJECT.dubEnd});
+function drawTL(){
+  const T=PROJECT.teams[who.team], F=FULL(), span=F.end-F.start, el=$("#tl");
+  [...el.querySelectorAll(".blk,.band")].forEach(x=>x.remove());
+  const band=document.createElement("div");band.className="band";
+  band.style.left=(T.start/span*100)+"%";
+  band.style.width=((T.end-T.start)/span*100)+"%";
+  band.title=`${T.label} 구간`;
+  el.append(band);
+  const my=new Set(linesOf(who).map(l=>l.id));
+  for(const l of PROJECT.lines){
+    const d=document.createElement("div");
+    const isMy=my.has(l.id), mine=l.team===who.team;
+    const up=subs.some(s=>s.line_id===l.id)||(isMy&&!!tkCur(l.id));
+    d.className="blk"+(isMy?" my":"")+(up?" done":"")+(mine?"":" other");
+    d.style.left=((l.s-F.start)/span*100)+"%";
+    d.style.width=Math.max(.6,(l.e-l.s)/span*100)+"%";
+    d.style.background=isMy?chOf(l.char).color:"var(--dim)";
+    d.title=`${l.char} · ${tc(l.s)} · ${l.text}`;
+    d.onclick=e=>{
+      e.stopPropagation();
+      if(isMy){
+        document.querySelector(`#bCues .cue[data-id="${l.id}"]`)?.scrollIntoView({block:"center",behavior:"smooth"});
+        return mode==="practice"?practice(l):hear(l);
+      }
+      /* 다른 사람 대사 — 올라온 녹음이 있으면 영상과 함께 들려준다 */
+      const v=voiceFor(l);
+      if(!v)return hear(l);
+      playWith(l,v);
+    };
+    el.append(d);
+  }
+}
+$("#tl").onclick=e=>{
+  const F=FULL(),r=e.currentTarget.getBoundingClientRect();
+  const t=F.start+(e.clientX-r.left)/r.width*(F.end-F.start);
+  stopAll();vid.playbackRate=1;
+  seekTo(t).then(playSafe).then(()=>{
+    applyAudio(t);
+    run({end:F.end,tick:x=>{showNow(x);bgmSync(x)},done:stopAll});
+  });
+};
+
+/* ---- 대사 카드 ---- */
+function drawCues(){
+  const my=linesOf(who), box=$("#bCues"); box.innerHTML="";
+  $("#bCount").textContent=`${my.length}줄`;
+  const showIpa=mode==="practice"?$("#pIpa").checked:$("#dIpa").checked;
+  const showKo=mode==="practice"?$("#pKo").checked:true;
+  for(const l of my){
+    const c=chOf(l.char), up=subs.find(s=>s.line_id===l.id);
+    const list=tkList(l.id), loc=list.length>0;
+    const stTxt = !loc ? (up?`☁ ${esc(up.person)}`:"비어있음")
+      : (up?`☁ 올라감 · ${list.length}개 중 ${takes[l.id].chosen+1}번`:`● ${list.length}개 녹음됨`);
+    const d=document.createElement("div");d.className="cue";d.dataset.id=l.id;
+    d.innerHTML=`
+      <div class="hd">
+        <span class="chip" style="background:${c.color}">${esc(l.char)}</span>
+        <span class="tc">${tc(l.s)} – ${tc(l.e)}</span>
+        ${mode==="dub"?`<span class="st ${up?"up":loc?"local":"none"}">${stTxt}</span>`:""}
+      </div>
+      <div class="en">${esc(l.text)}</div>
+      ${showIpa&&l.ipa?`<div class="ipa">${esc(l.ipa)}</div>`:""}
+      ${showKo&&l.trans?`<div class="ko">${esc(l.trans)}</div>`:""}
+      <div class="row"></div>
+      ${mode==="dub"?'<div class="wave hide"><div class="plot"><canvas></canvas><span class="lbl o">원본</span><span class="lbl m">내 녹음</span></div><div class="hint"></div></div><div class="tks"></div>':""}`;
+    const row=d.querySelector(".row");
+    const mk=(txt,cls,fn,dis)=>{const b=document.createElement("button");
+      b.className="mini"+(cls?" "+cls:"");b.textContent=txt;b.disabled=!!dis;b.onclick=fn;row.append(b);return b;};
+    if(mode==="practice"){
+      mk("▶ 들어보기",null,()=>hear(l));
+      mk(`🔁 ${$("#pLoop").value}번 반복`,null,()=>practice(l));
+      mk("🗣 섀도잉",null,()=>shadow(l));
+    }else{
+      mk("▶ 원본 대사",null,()=>hear(l));
+      mk(list.length?"● 다시 녹음":"● 녹음","rec",()=>record(l));
+      mk("🎬 영상에 맞춰",null,()=>overlay(l),!loc);
+      if(loc||up)mk("🗑 전부 지우기","del",()=>wipe(l));
+      /* 파일 올리기는 평소엔 쓰지 않는다. 앱 안에서 바로 녹음하면 되기 때문.
+         마이크가 끝내 안 되는 기기가 나오면 주소 뒤에 ?upload=1 을 붙여 쓴다. */
+      if(needUpload)mk("📁 파일 올리기",null,()=>pickFile(l));
+
+      if(loc) drawWave(d, l);          // 녹음이 있으면 파형 비교를 그려준다
+      /* 녹음한 테이크 목록 — 들어보고 고르고 지운다 */
+      const tbox=d.querySelector(".tks");
+      list.forEach((t,i)=>{
+        const picked=i===takes[l.id].chosen;
+        const r=document.createElement("div");r.className="tkrow"+(picked?" on":"");
+        const pick=document.createElement("button");
+        pick.className="tk tkpick"+(picked?" on":"");pick.textContent=picked?"★":"☆";
+        pick.title="이걸 제출본으로";
+        pick.onclick=()=>chooseTake(l,i);
+        const play=document.createElement("button");
+        play.className="tk tkplay";
+        play.textContent=`▶ ${i+1}번${t.dur?` · ${t.dur.toFixed(1)}초`:""}${picked?"  (제출본)":""}`;
+        play.onclick=()=>{stopAll();mineA=new Audio(t.url);mineA.play()};
+        const del=document.createElement("button");
+        del.className="tk tkdel";del.textContent="✕";del.title="이 테이크만 지우기";
+        del.onclick=()=>delTake(l,i);
+        r.append(pick,play,del);tbox.append(r);
+      });
+      if(list.length>1){
+        const h=document.createElement("p");h.className="tkhint";
+        h.textContent="★ 를 눌러 제출할 테이크를 고르세요. ✕ 는 그 테이크만 지웁니다.";
+        tbox.append(h);
+      }
+    }
+    box.append(d);
+  }
+  if(mode==="dub"){
+    const done=my.filter(l=>subs.some(s=>s.line_id===l.id)).length;
+    $("#pNum").textContent=`${done} / ${my.length} 제출`;
+    $("#pFill").style.width=(my.length?done/my.length*100:0)+"%";
+    const pend=my.filter(l=>takes[l.id]&&!subs.some(s=>s.line_id===l.id)).length;
+    const any=my.some(l=>takes[l.id]||subs.some(s=>s.line_id===l.id));
+    $("#dUpAll").textContent=pend?`☁ 안 올라간 ${pend}개 올리기`
+      :any?"☁ 전부 올라갔습니다":"아래에서 ● 녹음 을 눌러 시작하세요";
+    $("#dUpAll").disabled=!pend||!online;
+  }
+}
+$("#pIpa").onchange=$("#pKo").onchange=$("#dIpa").onchange=()=>drawCues();
+/* 재생 중에 바꿔도 그 자리에서 바뀌게 */
+$("#dMon").onchange=()=>{ if(mode==="dub"&&job) applyAudio(vid.currentTime); drawWarn(); };
+/* 녹음 전 가장 많이 틀리는 두 가지를 항상 눈에 띄게 둔다 */
+function drawWarn(){
+  const orig=$("#dMon").value==="orig";
+  const w=$("#dWarn");
+  w.classList.toggle("bad",orig);
+  w.innerHTML = orig
+    ? `⚠ <span><b>지금 설정으로 녹음하면 원어민 대사가 같이 녹음됩니다.</b>
+        위 [영상 소리] 를 <b>배경음악만</b> 으로 바꿔주세요. 그리고 <b>이어폰</b>을 꼭 끼세요.</span>`
+    : `🎧 <span><b>이어폰을 끼고 녹음하세요.</b> 스피커로 들으면 배경음악이 같이 녹음됩니다.
+        영상 소리는 <b>배경음악만</b> — 잘 맞춰져 있습니다.</span>`;
+}
+$("#pLoop").onchange=()=>drawCues();
+/* 원본 대사(위)와 내 녹음(아래)을 같은 시간축에 그려, 빠른지 늦은지 눈으로 보게 한다 */
+async function drawWave(cardEl,l){
+  const box=cardEl.querySelector(".wave"); if(!box)return;
+  const tk=tkCur(l.id); if(!tk)return;
+  const cv=box.querySelector("canvas");
+  const W=Math.max(240,Math.round(cardEl.clientWidth-32)), H=62, COLS=W;
+  cv.width=W*2; cv.height=H*2; cv.style.height=H+"px";
+  const g=cv.getContext("2d"); g.scale(2,2);
+  const span=(l.e-l.s)+TAIL;                    // 녹음 구간과 동일한 길이
+  let mineBuf=null, origEnv=null;
+  try{
+    const ac=new (window.AudioContext||webkitAudioContext)();
+    mineBuf=await ac.decodeAudioData(await tk.blob.arrayBuffer());
+    ac.close();
+  }catch(e){ return }
+  const ov=await getVocals();
+  if(ov) origEnv=envelope(ov, l.s, l.s+span, COLS);
+  const mineEnv=envelope(mineBuf, 0, span, COLS);
+
+  g.clearRect(0,0,W,H);
+  const mid=H/2;
+  // 대사 끝 지점 표시
+  const endX=Math.round(((l.e-l.s)/span)*W);
+  g.strokeStyle="rgba(240,165,0,.35)"; g.setLineDash([3,3]); g.beginPath();
+  g.moveTo(endX,0); g.lineTo(endX,H); g.stroke(); g.setLineDash([]);
+  g.strokeStyle="rgba(255,255,255,.10)"; g.beginPath(); g.moveTo(0,mid); g.lineTo(W,mid); g.stroke();
+  // 위 : 원본
+  if(origEnv){
+    g.fillStyle="rgba(170,163,145,.55)";
+    for(let i=0;i<COLS;i++){const h=origEnv[i]*(mid-3); g.fillRect(i,mid-h,1,h)}
+  }
+  // 아래 : 내 녹음
+  g.fillStyle="rgba(240,165,0,.85)";
+  for(let i=0;i<COLS;i++){const h=mineEnv[i]*(mid-3); g.fillRect(i,mid,1,h)}
+
+  // 한 줄 해설
+  const first=a=>{for(let i=0;i<a.length;i++)if(a[i]>0.12)return i/a.length*span; return null};
+  const last =a=>{for(let i=a.length-1;i>=0;i--)if(a[i]>0.12)return i/a.length*span; return null};
+  const mS=first(mineEnv), mE=last(mineEnv);
+  const oS=origEnv?first(origEnv):null;
+  let tip="";
+  if(mS!=null&&oS!=null){
+    const diff=mS-oS;
+    tip = Math.abs(diff)<0.12 ? "시작이 원본과 거의 같습니다."
+        : diff>0 ? `원본보다 <b>${diff.toFixed(1)}초 늦게</b> 시작했습니다.`
+                 : `원본보다 <b>${(-diff).toFixed(1)}초 빨리</b> 시작했습니다.`;
+  }
+  if(mE!=null){
+    const over=mE-(l.e-l.s);
+    if(over>0.25) tip+=` 끝이 <b>${over.toFixed(1)}초</b> 넘칩니다 (점선 밖).`;
+  }
+  box.querySelector(".hint").innerHTML=tip||"위가 원본, 아래가 내 녹음입니다. 점선이 대사 끝입니다.";
+  box.classList.remove("hide");
+}
+function markCue(id){$$("#bCues .cue").forEach(e=>e.classList.toggle("cur",+e.dataset.id===id));}
+
+/* ===================== 재생 엔진 ===================== */
+let raf=0,job=null,tmr=0,recGuard=0;
+function run(j){
+  job=j;
+  if(!raf)loop();
+  if(!tmr)tmr=setInterval(step,100);      // 화면이 안 그려져도 계속 진행
+}
+/* 탐색이 '끝난 뒤' 재생해야 한다. 바로 play() 하면 0초부터 나가버린다. */
+function seekTo(t){
+  return new Promise(res=>{
+    t=Math.max(0,t);
+    if(Math.abs(vid.currentTime-t)<0.04&&vid.readyState>=2)return res();
+    const ok=()=>{vid.removeEventListener("seeked",ok);clearTimeout(g);res()};
+    const g=setTimeout(()=>{vid.removeEventListener("seeked",ok);res()},2500);
+    vid.addEventListener("seeked",ok);
+    try{vid.currentTime=t}catch(e){vid.removeEventListener("seeked",ok);clearTimeout(g);res()}
+  });
+}
+const playSafe=()=>vid.play().catch(()=>{});
+/* 영상 앞쪽에 미리 흘려줄 여유가 없을 때(0초부터 시작하는 대사 등)
+   멈춘 채로 숫자만 세어 준다. */
+let cueAC=null;
+function beep(freq,ms,vol){
+  if(!$("#dCue")?.checked)return;
+  try{
+    cueAC=cueAC||new (window.AudioContext||webkitAudioContext)();
+    const t=cueAC.currentTime,o=cueAC.createOscillator(),g=cueAC.createGain();
+    o.type="sine";o.frequency.value=freq;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(vol,t+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+ms/1000);
+    o.connect(g).connect(cueAC.destination);o.start(t);o.stop(t+ms/1000+0.03);
+  }catch(e){}
+}
+function cueFlash(){
+  const el=$("#cueGo");el.classList.remove("on");void el.offsetWidth;el.classList.add("on");
+  setTimeout(()=>el.classList.remove("on"),600);
+}
+let cdTimer=0;
+function countdown(sec){
+  return new Promise(res=>{
+    let left=Math.max(1,Math.ceil(sec));
+    $("#cdNum").firstChild.textContent=left;
+    beep(760,110,.22);
+    cdTimer=setInterval(()=>{
+      if(--left<=0){clearInterval(cdTimer);cdTimer=0;res()}
+      else {$("#cdNum").firstChild.textContent=left;beep(760,110,.22)}
+    },1000);
+  });
+}
+/* 한 번 진행시키는 알맹이. rAF 와 타이머 둘 다 이걸 부른다. */
+function step(){
+  if(!job)return;
+  const t=vid.currentTime;
+  try{ job.tick?.(t) }catch(e){ console.warn("tick 오류",e) }
+  if(t>=job.end){ const d=job.done; job.done=null; d?.() }
+}
+/* ⚠ 탭을 바꾸거나 창을 내리면 브라우저가 requestAnimationFrame 을 '완전히' 멈춘다.
+   그것만 믿으면 녹음이 끝나지 않고 통째로 날아간다. 타이머를 같이 돌려 막는다. */
+function loop(){ raf=requestAnimationFrame(loop); step(); }
+function stopAll(){
+  cancelAnimationFrame(raf);raf=0;
+  if(tmr){clearInterval(tmr);tmr=0}
+  if(recGuard){clearTimeout(recGuard);recGuard=0}
+  job=null;
+  if(cdTimer){clearInterval(cdTimer);cdTimer=0}
+  vid.pause();bgm?.pause();
+  if(recording)endRec();
+  if(noteBusy)stopNote();
+  if(mineA){mineA.pause();mineA=null;}
+  mixPlaying.forEach(a=>{try{a.pause()}catch(e){}}); mixPlaying=[];
+  clearTimeout(shadT);
+  $("#ovl").classList.add("off");$("#lamp").classList.remove("on");$("#shad").classList.remove("on");
+  $("#cueGo").classList.remove("on");$("#cueFill").style.width="0";
+  $("#nowline").innerHTML="";markCue(-1);
+  $$("#bCues .mini.live").forEach(b=>{b.classList.remove("live");b.textContent="● 녹음"});
+}
+$("#pStop").onclick=$("#dStop").onclick=stopAll;
+
+function showNow(t){
+  const l=PROJECT.lines.find(x=>t>=x.s-.05&&t<=x.e+.05);
+  const ipa=mode==="practice"&&$("#pIpa").checked;
+  $("#nowline").innerHTML=l
+    ?`<span style="color:${chOf(l.char).color}">${esc(l.text)}${ipa&&l.ipa?`<em>${esc(l.ipa)}</em>`:""}</span>`:"";
+  markCue(l?l.id:-1);
+  const F=FULL();
+  $("#tlNow").style.left=Math.max(0,Math.min(100,(t-F.start)/(F.end-F.start)*100))+"%";
+}
+
+/* 사파리(아이폰)는 '사용자가 직접 누른 그 순간'에만 재생을 허용한다.
+   마이크 허가나 탐색을 기다리는 사이 그 권한이 풀려서, 녹음 때 영상이 안 돌아간다.
+   그래서 첫 터치에 한 번 소리 없이 틀었다 멈춰 영상을 '깨워' 둔다. */
+let unlocked=false;
+function unlockMedia(){
+  if(unlocked||!vid.src)return; unlocked=true;
+  const was=vid.muted; vid.muted=true;
+  const p=vid.play();
+  if(p&&p.then)p.then(()=>{vid.pause();vid.muted=was}).catch(()=>{vid.muted=was});
+  else {try{vid.pause()}catch(e){} vid.muted=was}
+  if(bgm){bgm.muted=true;const q=bgm.play();
+    if(q&&q.then)q.then(()=>{bgm.pause();bgm.muted=false}).catch(()=>{bgm.muted=false})}
+}
+addEventListener("pointerdown",unlockMedia,true);
+addEventListener("touchstart",unlockMedia,true);
+
+const rate=()=>mode==="practice"?+$("#pRate").value:1;
+
+/* 소리 규칙
+   · 연습 모드 — 언제나 원본 (원어민 발음을 들어야 따라 하니까)
+   · 더빙 모드 — 위의 [영상 소리] 선택이 '모든' 재생에 적용된다
+                배경음악만 / 음소거 / 원본 그대로
+   재생을 시작한 '뒤' 부르고, tick 에서 bgmSync(t) 로 계속 맞춰 준다. */
+function applyAudio(at){
+  if(mode==="practice"){ vid.muted=false; bgm&&bgm.pause(); return; }
+  const m=$("#dMon").value;
+  vid.muted = m!=="orig";
+  if(m==="bgm"&&bgm) bgmStart(at); else bgm&&bgm.pause();
+}
+
+/* 한 번 듣기 */
+/* 참고용 듣기 — [영상 소리] 설정과 상관없이 '언제나 원본 대사' 를 들려준다.
+   그 설정은 녹음할 때의 조건이지, 원어민 발음을 확인하는 것과는 다른 문제다. */
+async function hear(l){
+  stopAll();
+  vid.playbackRate=rate();
+  await seekTo(l.s-0.5);
+  vid.muted=false; bgm&&bgm.pause();
+  await playSafe();
+  run({end:l.e+0.15,tick:showNow,done:stopAll});
+}
+/* 반복 듣기 */
+function practice(l){
+  stopAll();
+  let left=+$("#pLoop").value;
+  const go=async()=>{
+    vid.muted=false;vid.playbackRate=rate();
+    await seekTo(l.s-0.5); await playSafe();
+    run({end:l.e+0.15,tick:showNow,done:()=>{
+      vid.pause();job=null;
+      if(--left>0)setTimeout(go,450);
+      else say(`<b>${esc(l.char)}</b> ${$("#pLoop").value}번 반복 끝.`);
+    }});
+  };go();
+}
+/* 섀도잉 : 한 번 들려주고 그만큼 비우기 */
+let shadT=0;
+async function shadow(l){
+  stopAll();
+  vid.muted=false;vid.playbackRate=rate();
+  await seekTo(l.s-0.4); await playSafe();
+  run({end:l.e+0.1,tick:showNow,done:()=>{
+    vid.pause();job=null;
+    const ms=(l.e-l.s)/rate()*1000+500;
+    $("#shadTxt").textContent=`${((l.e-l.s)/rate()).toFixed(1)}초`;
+    $("#shad").classList.add("on");
+    shadT=setTimeout(()=>{$("#shad").classList.remove("on");say("한 번 더 하려면 🗣 섀도잉 을 다시 누르세요.")},ms);
+  }});
+}
+/* 팀 전체 / 내 대사만 */
+/* 영상 전체 — 앞뒤 맥락을 보려면 우리 팀 구간만으로는 부족하다 */
+$("#pFlow").onclick=async()=>{
+  stopAll();const F=FULL();
+  vid.muted=false;vid.playbackRate=rate();
+  await seekTo(F.start); await playSafe();
+  say(`영상 전체(${mmss(F.start)}–${mmss(F.end)})를 봅니다. 우리 팀 구간은 타임라인에 밝게 표시돼 있습니다.`);
+  run({end:F.end,tick:showNow,done:stopAll});
+};
+$("#pTeam").onclick=async()=>{
+  stopAll();const T=PROJECT.teams[who.team];
+  vid.muted=false;vid.playbackRate=rate();
+  await seekTo(T.start); await playSafe();
+  say(`${esc(T.label)} 구간(${mmss(T.start)}–${mmss(T.end)})만 봅니다.`);
+  run({end:T.end,tick:showNow,done:stopAll});
+};
+$("#pMine").onclick=()=>{
+  stopAll();const q=[...linesOf(who)];
+  const next=async()=>{
+    const l=q.shift();if(!l)return stopAll();
+    vid.muted=false;vid.playbackRate=rate();
+    await seekTo(l.s-0.4); await playSafe();
+    run({end:l.e+0.1,tick:showNow,done:()=>{vid.pause();job=null;setTimeout(next,340)}});
+  };next();
+};
+
+/* ===================== 녹음 ===================== */
+let stream=null,mr=null,bits=[],recording=false,analyser=null,t0=0,mineA=null,mixPlaying=[];
+let micAC=null;
+const micAlive=()=>{
+  const t=stream&&stream.getAudioTracks&&stream.getAudioTracks()[0];
+  return !!(stream&&stream.active&&t&&t.readyState==="live");
+};
+/* 마이크를 잡고, 이미 잡혀 있어도 '아직 살아있는지' 확인한다.
+   이어폰을 뽑거나 권한이 바뀌면 스트림이 죽는데, 그대로 쓰면 무음이 녹음된다. */
+async function arm(){
+  if(micAlive())return stream;
+  if(stream){try{stream.getTracks().forEach(t=>t.stop())}catch(e){}}
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}});
+  stream.getAudioTracks().forEach(t=>{
+    t.onended=()=>say("마이크 연결이 끊겼습니다. 다시 <b>● 녹음</b> 을 누르면 다시 잡습니다.",1);
+  });
+  try{micAC&&micAC.close()}catch(e){}
+  micAC=new(window.AudioContext||webkitAudioContext)();
+  if(micAC.state==="suspended")await micAC.resume().catch(()=>{});
+  analyser=micAC.createAnalyser();analyser.fftSize=1024;
+  micAC.createMediaStreamSource(stream).connect(analyser);
+  /* 마이크를 다시 잡아도 미터 루프는 하나만 돌게 한다 */
+  if(!meterStarted){meterStarted=true;meter();}
+  return stream;
+}
+let recPeak=0, meterStarted=false, meterTimer=0;
+/* 입력 레벨 측정. rAF 를 쓰면 창이 가려졌을 때 멈춰서
+   '소리가 안 들어왔다' 고 잘못 판단한다 — 타이머로 돌린다. */
+function meter(){
+  if(meterTimer)return;
+  meterTimer=setInterval(()=>{
+    if(!analyser)return;
+    const b=new Uint8Array(analyser.fftSize);analyser.getByteTimeDomainData(b);
+    let pk=0;for(const v of b)pk=Math.max(pk,Math.abs(v-128));
+    $("#lvl").style.width=Math.min(100,pk/128*240)+"%";
+    if(recording||noteBusy)recPeak=Math.max(recPeak,pk);
+  },80);
+}
+/* 녹음한 소리가 '언제 시작해서 언제 끝났는지' 재서 타이밍을 짚어준다.
+   녹음은 대사 시작 시점부터 돌아가므로, 말 시작이 늦으면 그만큼 밀린 것이다. */
+async function checkTiming(l,blob){
+  try{
+    const ac=new (window.AudioContext||webkitAudioContext)();
+    const buf=await ac.decodeAudioData(await blob.arrayBuffer());
+    ac.close();
+    const d=buf.getChannelData(0), n=d.length, sr=buf.sampleRate;
+    let peak=0; for(let i=0;i<n;i++){const v=Math.abs(d[i]); if(v>peak)peak=v}
+    if(peak<0.01)return null;
+    const thr=Math.max(peak*0.07,0.006);
+    let a=0,b=n-1;
+    while(a<n-1&&Math.abs(d[a])<thr)a++;
+    while(b>a&&Math.abs(d[b])<thr)b--;
+    return {late:a/sr, end:b/sr, want:l.e-l.s};
+  }catch(e){ return null }
+}
+function timingTip(t){
+  if(!t)return "";
+  const bits=[];
+  if(t.late>0.35)        bits.push(`말 시작이 <b>${t.late.toFixed(1)}초 늦었습니다</b> — 조금 더 빨리 시작해 보세요.`);
+  else if(t.late<0.06 && t.end>t.want+0.1) bits.push("시작은 좋은데 말이 조금 길어요.");
+  const over=t.end-t.want;
+  if(over>0.3)           bits.push(`대사가 구간보다 <b>${over.toFixed(1)}초 깁니다</b> — 조금 빠르게 말해보세요.`);
+  else if(t.end<t.want*0.55 && t.want>1.0) bits.push("구간보다 많이 짧아요 — 천천히 또박또박 해도 됩니다.");
+  return bits.length ? "<br>⏱ "+bits.join(" ") : "<br>⏱ <b style=\"color:var(--ok)\">타이밍 좋습니다.</b>";
+}
+const SILENT_PEAK=3;        // 이보다 작으면 사실상 아무 소리도 안 들어온 것
+function badTake(blob){
+  if(!blob||blob.size<800)  return "녹음된 소리가 없습니다 (빈 파일).";
+  if(recPeak<SILENT_PEAK)   return "마이크에 소리가 거의 들어오지 않았습니다.";
+  return null;
+}
+async function record(l){
+  if(recording){stopAll();return;}
+  try{await arm()}
+  catch(e){
+    say(`마이크를 쓸 수 없습니다. <b>주소창 자물쇠 → 마이크 → 허용</b> 으로 켠 뒤 다시 눌러주세요.
+      그래도 안 되면 선생님께 알려주세요.`,1);
+    return;
+  }
+  stopAll();
+  const btn=document.querySelector(`#bCues .cue[data-id="${l.id}"] .mini.rec`);
+  vid.playbackRate=1;
+
+  const lead=Math.min(PRE,l.s);
+  await seekTo(l.s-lead);
+
+  /* ---- 앞 대사 준비 ----
+     팀원이 이미 녹음해 뒀으면 그 목소리로, 아직이면 원음으로 들려준다.
+     혼자 녹음해도 앞사람 톤을 이어받을 수 있게 하려는 장치. */
+  const useLead=$("#dLead").checked;
+  /* 팀 경계를 넘어도 '바로 앞 대사' 는 들려준다 (블랙팀 첫 대사는 화이트팀 끝 대사를 받는다) */
+  const leadInfo = useLead
+    ? PROJECT.lines
+        .filter(x=>x.id!==l.id && x.e>l.s-lead-0.05 && x.s<l.s)
+        .map(x=>({l:x, v:voiceFor(x)}))
+    : [];
+  const rec1=leadInfo.filter(x=>x.v), raw1=leadInfo.filter(x=>!x.v);
+  const needOriginal=raw1.length>0;          // 원음을 틀어 줘야 하는 구간이 있는가
+  const leadPlayers=new Map(rec1.map(c=>[c.l.id,Object.assign(new Audio(c.v.url),{preload:"auto"})]));
+  leadPlayers.forEach(a=>mixPlaying.push(a));
+
+  /* 지금 무엇이 들리는지 알려준다 */
+  const bits=[];
+  if(rec1.length)bits.push(rec1.map(c=>`${c.l.char}(${c.v.person==="나"?"내 녹음":c.v.person+" 님"})`).join(", "));
+  if(raw1.length)bits.push(raw1.map(c=>`${c.l.char}(아직 녹음 전 — 원음)`).join(", "));
+  const leadLabel = leadInfo.length ? `앞 대사: ${bits.join(" · ")}` : "앞에 대사 없음 — 바로 시작합니다";
+  $("#ovl").classList.remove("off");
+  $("#cdTxt").textContent = useLead ? leadLabel : `${l.char} · 준비`;
+  if(leadInfo.length)
+    say(`${esc(leadLabel)} 를 듣고 이어서 <b>${esc(l.char)}</b> 를 녹음합니다.`,1);
+
+  if(lead<PRE-0.05){                      // 영상 앞이 모자라면 멈춘 채로 센다
+    await countdown(PRE-lead);
+    if(mode!=="dub")return;
+  }
+  /* 앞 대사 구간의 소리 : 원음이 필요하면 영상 소리를 열고 배경음악은 잠시 멈춘다
+     (원음 안에 이미 음악이 들어있어 같이 틀면 겹친다)
+     재생 '전에' 정해 둬야 첫 순간이 잠깐 음소거로 깜빡이지 않는다. */
+  const preAudio=()=>{
+    if(needOriginal && $("#dMon").value==="bgm"){ vid.muted=false; bgm&&bgm.pause(); }
+    else applyAudio(vid.currentTime);
+  };
+  preAudio();
+  await playSafe();
+  preAudio();
+
+  let lastN=null, armed=false; const firedLead=new Set();
+  run({end:l.e+TAIL,tick:t=>{
+    showNow(t);
+    if(!recording){
+      /* 녹음본이 있는 앞 대사는 그 목소리로 틀고, 그동안 원음은 죽인다 */
+      for(const c of rec1)
+        if(!firedLead.has(c.l.id)&&t>=c.l.s&&t<c.l.s+.35){
+          firedLead.add(c.l.id);
+          const a=leadPlayers.get(c.l.id);
+          try{a.currentTime=0;a.play().catch(()=>{})}catch(e){}
+        }
+      if(needOriginal && $("#dMon").value==="bgm"){
+        const onTake=rec1.some(c=>t>=c.l.s-0.03 && t<c.l.e+0.12);
+        vid.muted=onTake;                  // 녹음본이 흐르는 동안만 원음 차단
+      }else bgmSync(t);
+
+      if(t<l.s){
+        const n=Math.max(1,Math.ceil(l.s-t));
+        if(n!==lastN){lastN=n;$("#cdNum").firstChild.textContent=n;beep(760,110,.22)}
+      }else if(!armed){
+        armed=true;
+        applyAudio(vid.currentTime);       // 내 차례 — 녹음용 소리로 되돌린다
+        leadPlayers.forEach(a=>{try{a.pause()}catch(e){}});
+        startRec(l,btn);
+      }
+    }else{
+      bgmSync(t);
+      $("#cueFill").style.width=Math.min(100,(t-l.s)/(l.e-l.s)*100)+"%";
+    }
+  },done:()=>{endRec();vid.pause();bgm?.pause();job=null;}});
+}
+function startRec(l,btn){
+  bits=[]; recPeak=0;
+  const mt=["audio/webm;codecs=opus","audio/webm","audio/mp4"].find(x=>MediaRecorder.isTypeSupported(x));
+  try{ mr=new MediaRecorder(stream,mt?{mimeType:mt}:undefined); }
+  catch(e){ recording=false; say(`녹음기를 열지 못했습니다: ${esc(e.message||e)}`,1); stopAll(); return; }
+  mr.ondataavailable=e=>e.data.size&&bits.push(e.data);
+  mr.onerror=ev=>{
+    recording=false;
+    say(`녹음 중 오류가 났습니다 (${esc(ev?.error?.name||"unknown")}). 다시 녹음해 주세요.`,1);
+  };
+  mr.onstop=async()=>{
+    const blob=new Blob(bits,{type:mr.mimeType||"audio/webm"});
+    const bad=badTake(blob);
+    if(bad){                                   // 무음·빈 파일은 제출본으로 만들지 않는다
+      say(`<b style="color:var(--rec)">${esc(bad)}</b> 마이크가 켜져 있는지, 브라우저가 쓰는 마이크가 맞는지
+        확인한 뒤 <b>● 다시 녹음</b> 해 주세요. (이 녹음은 올리지 않았습니다)`,1);
+      return;
+    }
+    addTake(l.id,blob,(performance.now()-t0)/1000);
+    try{ await saveTakes(l.id); }
+    catch(e){ say(`<b style="color:var(--rec)">이 기기에 저장하지 못했습니다 (${esc(e.message||e)})</b>
+      — 지금 바로 올라가는지 확인하고, 안 되면 다시 녹음해 주세요.`,1); }
+    drawCues();drawTL();
+    const n=tkList(l.id).length;
+    say(`<b>${esc(l.char)}</b> ${n}번째 녹음. 올리는 중…`,1);
+    const tip=timingTip(await checkTiming(l,blob));
+    const ok=await upload(l);
+    const nextL=linesOf(who).find(x=>!tkCur(x.id));
+    const nextMsg=nextL?` 다음은 <b>${tc(nextL.s)} ${esc(nextL.char)}</b> 입니다.`
+                       :` <b style="color:var(--ok)">내 대사를 모두 녹음했습니다 🎉</b>`;
+    say(ok?`<b>${esc(l.char)}</b> ${n}번 올라갔습니다.${tip}${nextMsg}`
+         :`<b style="color:var(--rec)">올리기 실패</b> — 녹음은 이 기기에 남아 있습니다.
+           인터넷을 확인하고 <b>☁ 안 올라간 것 올리기</b> 를 눌러주세요. <b>창을 닫지 마세요.</b>${tip}`,1);
+    if(nextL)document.querySelector(`#bCues .cue[data-id="${nextL.id}"]`)
+      ?.scrollIntoView({block:"center",behavior:"smooth"});
+  };
+  mr.start(1000);          // 1초마다 조각을 받아둔다 — 중간에 문제가 나도 앞부분은 남는다
+  recording=true;t0=performance.now();
+  /* 최후의 안전장치 : 무슨 일이 있어도 이 시간이 지나면 녹음을 닫고 저장한다 */
+  if(recGuard)clearTimeout(recGuard);
+  recGuard=setTimeout(()=>{
+    if(recording){ endRec(); try{vid.pause();bgm?.pause()}catch(e){} job=null; }
+  }, (l.e+TAIL-l.s)*1000 + 900);
+  $("#ovl").classList.add("off");$("#lamp").classList.add("on");
+  beep(1180,150,.3); cueFlash();
+  if(btn){btn.classList.add("live");btn.textContent="■ 녹음 중"}
+}
+function endRec(){
+  recording=false;$("#lamp").classList.remove("on");
+  try{mr&&mr.state!=="inactive"&&mr.stop()}catch(e){}
+}
+/* 어떤 대사를 그 사람 녹음과 함께 들려준다 */
+async function playWith(l,v){
+  stopAll();
+  mineA=new Audio(v.url);
+  vid.playbackRate=1;
+  await seekTo(l.s); await playSafe();
+  applyAudio(l.s); mineA.play().catch(()=>{});
+  say(`<b>${esc(l.char)}</b> — ${esc(v.person)} 님 녹음입니다.`);
+  run({end:l.e+TAIL,tick:t=>{showNow(t);bgmSync(t)},done:stopAll});
+}
+/* 내 더빙 얹어 듣기 */
+async function overlay(l){
+  stopAll();
+  mineA=new Audio(tkCur(l.id).url);
+  vid.playbackRate=1;
+  await seekTo(l.s);
+  await playSafe(); mineA.play();
+  applyAudio(l.s);
+  run({end:l.e+TAIL,tick:t=>{showNow(t);bgmSync(t)},done:stopAll});
+}
+$("#dMix").onclick=async()=>{
+  stopAll();
+  const F=FULL();
+  /* 영상 전체에서 '지금 소리가 있는' 모든 대사 — 내 테이크 + 다른 분들이 올린 것 */
+  const cues=PROJECT.lines.map(l=>{const v=voiceFor(l);return v?{l,...v}:null}).filter(Boolean);
+  if(!cues.length){say("아직 녹음된 대사가 없습니다. 먼저 <b>● 녹음</b> 을 해보세요.");return}
+  const players=new Map(cues.map(c=>[c.l.id,Object.assign(new Audio(c.url),{preload:"auto"})]));
+  players.forEach(a=>mixPlaying.push(a));
+  const fired=new Set();
+  const mineN=cues.filter(c=>c.person==="나").length, otherN=cues.length-mineN;
+
+  vid.playbackRate=1;
+  await seekTo(F.start); await playSafe();
+  applyAudio(F.start);
+  say(`영상 전체를 들려줍니다 — 내 녹음 <b>${mineN}</b>개${otherN?` + 다른 분 <b>${otherN}</b>개`:""},
+    아직 비어 있는 ${PROJECT.lines.length-cues.length}줄은 조용히 지나갑니다.`,1);
+
+  run({end:F.end,tick:t=>{
+    showNow(t); bgmSync(t);
+    for(const c of cues){
+      if(!fired.has(c.l.id)&&t>=c.l.s&&t<c.l.s+.35){
+        fired.add(c.l.id);
+        const a=players.get(c.l.id); try{a.currentTime=0;a.play().catch(()=>{})}catch(e){}
+        /* 원본 소리를 틀어둔 상태면 그 대사 동안만 원본을 죽여 겹치지 않게 */
+        if($("#dMon").value==="orig"){
+          vid.muted=true;
+          setTimeout(()=>{if(job&&$("#dMon").value==="orig")vid.muted=false},(c.l.e-c.l.s+TAIL)*1000);
+        }
+      }
+    }
+  },done:stopAll});
+};
+
+/* ===================== 크레딧 소감 (목소리) ===================== */
+const NOTE_MAX=25;                      // 너무 길어지지 않게 상한
+let noteTake=null, noteRec=null, noteBits=[], noteT0=0, noteTimer=0, noteBusy=false;
+const noteKey=()=>`${PROJECT.key}:note:${who.person}`;
+
+async function loadNote(){
+  noteTake=null;
+  const st=await tAll(); const v=st[noteKey()];
+  if(v instanceof Blob) noteTake={blob:v,url:URL.createObjectURL(v),dur:0};
+  else if(v&&v.blob)    noteTake={blob:v.blob,url:URL.createObjectURL(v.blob),dur:v.dur||0};
+  drawNote();
+}
+function drawNote(){
+  const up=notes.find(n=>n.person===who?.person);
+  const el=$("#nSt");
+  el.className="st "+(up?"up":noteTake?"local":"none");
+  el.textContent = up ? `☁ 올라감${up.dur?` · ${up.dur.toFixed(1)}초`:""}`
+                 : noteTake ? `● 녹음됨${noteTake.dur?` · ${noteTake.dur.toFixed(1)}초`:""}`
+                 : "아직 없음";
+  $("#nPlay").disabled=!noteTake;
+  $("#nDel").disabled=!noteTake&&!up;
+}
+$("#nRec").onclick=async()=>{
+  if(noteRec&&noteRec.state!=="inactive"){ stopNote(); return; }
+  try{await arm()}
+  catch(e){ say("마이크를 쓸 수 없습니다. 주소창 자물쇠 → 마이크 → 허용 을 켜 주세요.",1); return; }
+  stopAll();
+  noteBits=[];
+  const mt=["audio/webm;codecs=opus","audio/webm","audio/mp4"].find(x=>MediaRecorder.isTypeSupported(x));
+  noteRec=new MediaRecorder(stream,mt?{mimeType:mt}:undefined);
+  noteRec.ondataavailable=e=>e.data.size&&noteBits.push(e.data);
+  noteRec.onerror=ev=>{noteBusy=false;say(`소감 녹음 중 오류 (${esc(ev?.error?.name||"unknown")}). 다시 녹음해 주세요.`,1)};
+  noteRec.onstop=async()=>{
+    noteBusy=false;
+    clearInterval(noteTimer);noteTimer=0;$("#nTime").textContent="";
+    $("#nRec").classList.remove("live");$("#nRec").textContent="● 다시 녹음";
+    const blob=new Blob(noteBits,{type:noteRec.mimeType||"audio/webm"});
+    const bad=badTake(blob);
+    if(bad){
+      say(`<b style="color:var(--rec)">${esc(bad)}</b> 마이크를 확인한 뒤 다시 녹음해 주세요.`,1);
+      $("#nRec").textContent="● 소감 녹음"; return;
+    }
+    noteTake={blob,url:URL.createObjectURL(blob),dur:(performance.now()-noteT0)/1000};
+    try{ await tPut(noteKey(),{blob,dur:noteTake.dur}); }
+    catch(e){ say(`소감을 이 기기에 저장하지 못했습니다 (${esc(e.message||e)})`,1) }
+    drawNote();
+    say("소감 녹음됨. 올리는 중…",1);
+    const ok=await uploadNote();
+    say(ok?"소감이 올라갔습니다. 크레딧에 들어갑니다.":"올리기 실패 — 다시 눌러보세요.",!ok);
+  };
+  noteRec.start(1000); noteT0=performance.now(); noteBusy=true; recPeak=0;
+  $("#nRec").classList.add("live"); $("#nRec").textContent="■ 그만하기";
+  $("#lamp").classList.add("on");
+  noteTimer=setInterval(()=>{
+    const el=(performance.now()-noteT0)/1000;
+    $("#nTime").textContent=`${el.toFixed(1)}초 / ${NOTE_MAX}초`;
+    if(el>=NOTE_MAX)stopNote();
+  },100);
+};
+function stopNote(){
+  try{noteRec&&noteRec.state!=="inactive"&&noteRec.stop()}catch(e){}
+  $("#lamp").classList.remove("on");
+}
+$("#nPlay").onclick=()=>{ if(noteTake){stopAll();mineA=new Audio(noteTake.url);mineA.play()} };
+$("#nDel").onclick=async()=>{
+  if(!confirm("크레딧 소감을 지우고 다시 녹음할까요?"))return;
+  noteTake=null; await tDel(noteKey());
+  const up=notes.find(n=>n.person===who.person);
+  if(up&&online){
+    try{
+      await sb.storage.from(CONFIG.BUCKET).remove([up.path]);
+      await sb.from("submissions").delete().eq("project",PROJECT.key).eq("line_id",0).eq("person",who.person);
+      await pull();
+    }catch(e){say(`서버에서 지우지 못했습니다: ${esc(e.message||e)}`,1)}
+  }
+  $("#nRec").textContent="● 소감 녹음";
+  drawNote(); say("소감을 지웠습니다.");
+};
+async function uploadNote(){
+  if(!online||!noteTake)return false;
+  try{
+    const ty=noteTake.blob.type||"";
+    const ext=ty.includes("mp4")?"m4a":"webm";
+    const path=`${PROJECT.key}/note_${safe(who.person)}_${Date.now()}.${ext}`;
+    const u=await sb.storage.from(CONFIG.BUCKET).upload(path,noteTake.blob,{contentType:ty});
+    if(u.error)throw u.error;
+    const i=await sb.from("submissions").insert({project:PROJECT.key,line_id:0,team:who.team,
+      char:"소감",person:who.person,path,dur:+(noteTake.dur||0).toFixed(2)});
+    if(i.error)throw i.error;
+    try{ await sb.from("submissions").delete()
+      .eq("project",PROJECT.key).eq("line_id",0).eq("person",who.person).neq("path",path); }
+    catch(e){ console.warn("옛 소감 정리 실패(무해)",e) }
+    await pull(); drawNote(); return true;
+  }catch(e){console.warn(e);return false}
+}
+
+/* ===================== 테이크 고르기 / 지우기 / 올리기 ===================== */
+async function chooseTake(l,i){
+  if(!takes[l.id])return;
+  takes[l.id].chosen=i;
+  await saveTakes(l.id); drawCues();
+  say(`<b>${esc(l.char)}</b> ${i+1}번을 제출본으로 바꿉니다. 올리는 중…`,1);
+  const ok=await upload(l);
+  say(ok?`<b>${esc(l.char)}</b> ${i+1}번으로 바뀌었습니다.`
+       :`바꾸지 못했습니다 — <b>안 올라간 것 올리기</b> 를 눌러주세요.`,!ok);
+}
+async function delTake(l,i){
+  const t=takes[l.id]; if(!t)return;
+  const wasChosen=i===t.chosen;
+  t.list.splice(i,1);
+  if(!t.list.length){ await wipe(l,true); return; }
+  if(t.chosen>=t.list.length)t.chosen=t.list.length-1;
+  else if(i<t.chosen)t.chosen--;
+  await saveTakes(l.id); drawCues(); drawTL();
+  if(wasChosen&&online){
+    say(`지웠습니다. 남은 ${t.chosen+1}번을 제출본으로 올리는 중…`,1);
+    const ok=await upload(l);
+    say(ok?`${t.chosen+1}번이 제출본이 됐습니다.`:`올리지 못했습니다.`,!ok);
+  }else say(`${i+1}번 테이크를 지웠습니다. (${t.list.length}개 남음)`);
+}
+async function wipe(l,quiet){
+  if(!quiet&&!confirm(`${l.char} — "${l.text.slice(0,40)}…"\n\n이 대사의 녹음을 ${tkList(l.id).length}개 모두 지울까요?`))return;
+  delete takes[l.id]; await tDel(kOf(l.id));
+  const s=subs.find(x=>x.line_id===l.id);
+  if(s&&online){
+    try{
+      await sb.storage.from(CONFIG.BUCKET).remove([s.path]);
+      await sb.from("submissions").delete().eq("project",PROJECT.key).eq("line_id",l.id);
+      await pull();
+    }catch(e){say(`서버에서 지우지 못했습니다: ${esc(e.message||e)}`,1)}
+  }
+  drawCues();drawTL();
+  say(`<b>${esc(l.char)}</b> 녹음을 모두 지웠습니다. 다시 <b>● 녹음</b> 을 누르세요.`);
+}
+/* 휴대폰 녹음기 앱으로 녹음한 파일을 그대로 올리는 길.
+   브라우저 녹음이 안 되는 기기에서도 참여할 수 있다. */
+let needUpload=new URLSearchParams(location.search).has("upload");
+let pickFor=null;
+function pickFile(l){ pickFor=l; $("#pickAudio").value=""; $("#pickAudio").click(); }
+$("#pickAudio").onchange=async e=>{
+  const f=e.target.files[0], l=pickFor; pickFor=null;
+  if(!f||!l)return;
+  if(f.size>40*1024*1024){say("파일이 너무 큽니다 (40MB 넘음). 그 대사만 잘라서 올려주세요.",1);return}
+  try{
+    const dur=await audioLen(f);
+    const want=l.e-l.s;
+    addTake(l.id,f,dur||want);
+    await saveTakes(l.id);
+    drawCues();drawTL();
+    let tip="";
+    if(dur&&dur>want+1.5)tip=` 참고 — 이 대사는 <b>${want.toFixed(1)}초</b>인데 올린 파일은 <b>${dur.toFixed(1)}초</b>입니다.
+      앞뒤 빈 부분이 길면 합칠 때 밀릴 수 있으니, 가능하면 대사만 잘라서 올려주세요.`;
+    say(`<b>${esc(l.char)}</b> 파일을 넣었습니다. 올리는 중…${tip}`,1);
+    const ok=await upload(l);
+    say(ok?`<b>${esc(l.char)}</b> 올라갔습니다.${tip}`
+          :`올리기 실패 — 파일은 이 기기에 남아 있습니다. <b>안 올라간 것 올리기</b> 를 눌러주세요.`,1);
+  }catch(err){ say(`파일을 읽지 못했습니다: ${esc(err.message||err)}`,1) }
+};
+function audioLen(file){
+  return new Promise(res=>{
+    const a=new Audio(), u=URL.createObjectURL(file);
+    a.preload="metadata";
+    a.onloadedmetadata=()=>{const d=a.duration;URL.revokeObjectURL(u);res(isFinite(d)?d:0)};
+    a.onerror=()=>{URL.revokeObjectURL(u);res(0)};
+    a.src=u; setTimeout(()=>res(0),4000);
+  });
+}
+
+const safe=s=>String(s).replace(/[^\w가-힣-]+/g,"_").slice(0,28)||"anon";
+async function upload(l){
+  if(!online)return false;
+  const t=tkCur(l.id);if(!t)return false;
+  try{
+    const ty=(t.blob.type||"");
+    const ext=(t.blob.name&&t.blob.name.includes(".")
+        ? t.blob.name.split(".").pop().toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,4)
+        : ty.includes("mp4")||ty.includes("m4a")||ty.includes("aac") ? "m4a"
+        : ty.includes("mpeg")||ty.includes("mp3") ? "mp3"
+        : ty.includes("wav") ? "wav"
+        : ty.includes("ogg") ? "ogg" : "webm") || "webm";
+    const path=`${PROJECT.key}/line${String(l.id).padStart(2,"0")}_${safe(who.person)}_${Date.now()}.${ext}`;
+    const u=await sb.storage.from(CONFIG.BUCKET).upload(path,t.blob,{contentType:t.blob.type});
+    if(u.error)throw u.error;
+    /* 반드시 '넣고 나서' 지운다. 지우고 넣다가 실패하면 기존 녹음까지 사라진다. */
+    const i=await sb.from("submissions").insert({project:PROJECT.key,line_id:l.id,team:l.team,
+      char:l.char,person:who.person,path,dur:+(t.dur||0).toFixed(2)});
+    if(i.error)throw i.error;
+    try{ await sb.from("submissions").delete()
+      .eq("project",PROJECT.key).eq("line_id",l.id).neq("path",path); }
+    catch(e){ console.warn("옛 기록 정리 실패(무해)",e) }
+    await pull();drawCues();drawTL();return true;
+  }catch(e){console.warn(e);return false}
+}
+$("#dUpAll").onclick=async()=>{
+  const b=$("#dUpAll");b.disabled=true;b.textContent="올리는 중…";
+  for(const l of linesOf(who))if(tkCur(l.id)&&!subs.some(s=>s.line_id===l.id))await upload(l);
+  drawCues();drawTL();
+};
+async function pull(){
+  if(!online){subs=[];notes=[];return}
+  const {data,error}=await sb.from("submissions").select("*").eq("project",PROJECT.key);
+  /* 네트워크가 잠깐 끊겼다고 '아무것도 제출 안 됨' 으로 보이면 안 된다 — 직전 값을 유지한다 */
+  if(error){console.warn("목록 받기 실패(이전 상태 유지)",error);return}
+  const best={}, bestNote={};
+  for(const r of data||[]){
+    if(r.line_id===0){                       // 0 번은 '크레딧 소감'
+      if(!bestNote[r.person]||new Date(r.created_at)>new Date(bestNote[r.person].created_at))
+        bestNote[r.person]=r;
+    }else if(!best[r.line_id]||new Date(r.created_at)>new Date(best[r.line_id].created_at))
+      best[r.line_id]=r;
+  }
+  subs=Object.values(best); notes=Object.values(bestNote);
+}
+const pub=p=>sb.storage.from(CONFIG.BUCKET).getPublicUrl(p).data.publicUrl;
+
+/* 다른 분들이 올린 녹음을 20초마다 받아와 화면에 반영한다.
+   (버킷이 공개라 주소만 있으면 바로 재생된다) */
+let pollT=0;
+function startPoll(){
+  stopPoll(); if(!online)return;
+  pollT=setInterval(async()=>{
+    if($("#vBooth").classList.contains("hide"))return;
+    const before=subs.map(x=>x.line_id+":"+x.path).sort().join("|");
+    await pull();
+    if(subs.map(x=>x.line_id+":"+x.path).sort().join("|")!==before){
+      drawCues();drawTL();
+      say(`다른 분들 녹음이 올라왔습니다 — 지금 <b>${subs.length} / ${PROJECT.lines.length}</b>줄.
+        <b>▶ 지금까지 더빙 들어보기</b> 로 같이 들어볼 수 있습니다.`);
+    }
+  },20000);
+}
+function stopPoll(){ if(pollT)clearInterval(pollT); pollT=0 }
+
+/* 그 대사에서 지금 들을 수 있는 목소리 — 내 대사면 내 테이크, 아니면 올라온 것 */
+function voiceFor(l){
+  const mineTk=tkCur(l.id);
+  if(mineTk&&who&&l.team===who.team&&who.chars.includes(l.char))
+    return {url:mineTk.url, person:"나"};
+  const s=subs.find(x=>x.line_id===l.id);
+  return s?{url:pub(s.path), person:s.person}:null;
+}
+
+/* ===================== 관리자 ===================== */
+async function openAdmin(){
+  show("vAdmin");
+  $("#aSub").textContent=`${PROJECT.title} — 대사 ${PROJECT.lines.length}줄 · 참가자 ${PROJECT.cast.length}명`;
+  await pull();drawAdmin();
+}
+function drawAdmin(){
+  $("#aNote").innerHTML=online
+    ? `제출 <b>${subs.length} / ${PROJECT.lines.length}</b> 줄`
+       + (notes.length?` · 크레딧 소감 <b>${notes.length}</b>개`:"")
+       + `. 학생에게는 <b>?admin</b> 없는 주소만 알려주세요.<br>
+       위 <b>본편 영상 받기</b> 는 더빙만 입힌 영상입니다 (빠르게 확인용).<br>
+       <b>오프닝 타이틀 + 엔딩 크레딧(소감 목소리 포함)</b> 까지 들어간 완성본은 터미널에서
+       <code>~/.dubtools/bin/python ~/더빙룸/build_final.py</code> 를 돌려야 나옵니다.`
+    : `<b>config.js 에 Supabase 주소가 비어 있습니다.</b> 채우면 여기에 전원 현황이 뜹니다.`;
+  const box=$("#aCast");box.innerHTML="";
+  for(const [tk,t] of Object.entries(PROJECT.teams)){
+    const h=document.createElement("div");
+    h.innerHTML=`<h2 style="font-size:16px;margin:22px 0 8px">${esc(t.label)}
+      <span class="mono" style="font-size:12px;color:var(--dim);font-weight:400"> ${mmss(t.start)}–${mmss(t.end)}</span></h2>`;
+    const tb=document.createElement("table");
+    tb.innerHTML=`<thead><tr><th>#</th><th>시간</th><th>캐릭터</th><th>대사</th><th>맡은 사람</th><th>상태</th><th>싱크 미세조정</th></tr></thead><tbody></tbody>`;
+    for(const l of teamLines(tk)){
+      const p=PROJECT.cast.find(c=>c.team===tk&&c.chars.includes(l.char));
+      const s=subs.find(x=>x.line_id===l.id);
+      const tr=document.createElement("tr");
+      tr.innerHTML=`<td class="c">${l.id}</td><td class="c">${tc(l.s)}</td>
+        <td><span class="chip" style="background:${chOf(l.char).color}">${esc(l.char)}</span></td>
+        <td style="max-width:360px">${esc(l.text)}</td>
+        <td>${p?esc(p.person):`<span style="color:var(--rec)">미배정</span>`}</td>
+        <td><span class="dot ${s?"y":"n"}"></span>${s?esc(s.person):"대기"}${
+          s&&scanRes[l.id]?`<span class="flag ${scanRes[l.id].kind}">${esc(scanRes[l.id].msg)}</span>`:""
+        }</td><td></td>`;
+      if(s){
+        const cell=tr.lastElementChild;
+        cell.append(mkNudge(l,s));
+      }
+      tb.querySelector("tbody").append(tr);
+    }
+    h.append(tb);box.append(h);
+  }
+}
+/* 싱크 미세조정 — 녹음이 조금 빠르거나 늦으면 밀고 당긴다.
+   원본 녹음은 건드리지 않고 '몇 ms 옮길지' 만 저장한다. */
+function mkNudge(l,s){
+  const box=document.createElement("div"); box.className="nudge";
+  const cur=()=>(subs.find(x=>x.line_id===l.id)?.offset_ms)||0;
+  const val=document.createElement("span"); val.className="nval mono";
+  const paint=()=>{const o=cur();
+    val.textContent=(o>0?"+":"")+(o/1000).toFixed(2)+"s";
+    val.style.color=o?"var(--amber)":"var(--dim)";};
+  const btn=(txt,title,fn)=>{
+    const b=document.createElement("button");
+    b.className="mini"; b.textContent=txt; b.title=title;
+    b.onclick=async()=>{
+      box.querySelectorAll("button").forEach(x=>x.disabled=true);
+      await fn();
+      box.querySelectorAll("button").forEach(x=>x.disabled=false);
+    };
+    return b;};
+  const save=async nv=>{
+    nv=Math.max(-3000,Math.min(3000,Math.round(nv)));
+    const {error}=await sb.from("submissions").update({offset_ms:nv}).eq("id",s.id);
+    if(error){$("#aNote").innerHTML=`미세조정 저장 실패: <b>${esc(error.message)}</b>`;return}
+    const row=subs.find(x=>x.line_id===l.id); if(row)row.offset_ms=nv;
+    paint();
+  };
+  box.append(
+    btn("▶","영상과 같이 들어보기 (미세조정 반영)",async()=>previewLine(l,s)),
+    btn("◀ 50","50ms 당기기 (더 빨리)",()=>save(cur()-50)),
+    val,
+    btn("50 ▶","50ms 밀기 (더 늦게)",()=>save(cur()+50)),
+    btn("↺","0 으로 되돌리기",()=>save(0)),
+  );
+  paint();
+  return box;
+}
+/* 그 대사만 영상과 함께 들어보기 — 미세조정이 어떻게 들리는지 바로 확인 */
+let prevAudio=null, prevVid=null;
+async function previewLine(l,s){
+  if(prevAudio){prevAudio.pause();prevAudio=null}
+  if(!prevVid){
+    prevVid=document.createElement("video");
+    prevVid.style.cssText="width:100%;max-width:560px;border-radius:6px;margin-top:14px;display:block";
+    prevVid.playsInline=true; prevVid.src=PROJECT.video;
+    $("#aPrev").after(prevVid);
+  }
+  const off=((subs.find(x=>x.line_id===l.id)?.offset_ms)||0)/1000;
+  const lead=1.0;
+  prevVid.muted=!!PROJECT.videoBgm;         // 배경음악 트랙이 있으면 원본 대사는 끈다
+  prevVid.currentTime=Math.max(0,l.s-lead);
+  prevAudio=new Audio(pub(s.path));
+  let bedA=null;
+  if(PROJECT.videoBgm){bedA=new Audio(PROJECT.videoBgm);bedA.currentTime=prevVid.currentTime;bedA.play().catch(()=>{})}
+  await prevVid.play().catch(()=>{});
+  setTimeout(()=>prevAudio&&prevAudio.play().catch(()=>{}), Math.max(0,(lead+off))*1000);
+  const stop=()=>{if(prevVid.currentTime>=l.s+off+ (l.e-l.s) +0.8){
+    prevVid.pause();bedA&&bedA.pause();clearInterval(iv)}};
+  const iv=setInterval(stop,100);
+}
+/* 제출된 녹음을 전부 받아 타이밍을 재서, 문제 있는 줄만 표시한다.
+   31줄을 일일이 들어볼 필요 없이 '다시 찍어야 할 것' 만 골라낸다. */
+let scanRes={};
+$("#aScan").onclick=async()=>{
+  const b=$("#aScan"); b.disabled=true;
+  if(!subs.length){prog(0,"<b>제출된 녹음이 없습니다.</b>");b.disabled=false;return}
+  scanRes={};
+  const ac=new (window.AudioContext||webkitAudioContext)();
+  const list=subs.filter(s=>lineById(s.line_id));
+  for(let i=0;i<list.length;i++){
+    const s=list[i], l=lineById(s.line_id);
+    prog(i/list.length*100, `녹음 확인 중… ${i+1} / ${list.length} — ${esc(l.char)} (${esc(s.person)})`);
+    try{
+      const buf=await ac.decodeAudioData(await (await fetch(pub(s.path))).arrayBuffer());
+      const d=buf.getChannelData(0), n=d.length, sr=buf.sampleRate;
+      let peak=0; for(let k=0;k<n;k++){const v=Math.abs(d[k]); if(v>peak)peak=v}
+      if(peak<0.01){scanRes[l.id]={kind:"bad",msg:"소리 없음"};continue}
+      const thr=Math.max(peak*0.07,0.006);
+      let a=0,z=n-1;
+      while(a<n-1&&Math.abs(d[a])<thr)a++;
+      while(z>a&&Math.abs(d[z])<thr)z--;
+      const late=a/sr + (s.offset_ms||0)/1000, end=z/sr + (s.offset_ms||0)/1000, want=l.e-l.s;
+      const over=end-want;
+      if(late>0.6)        scanRes[l.id]={kind:"bad", msg:`시작 ${late.toFixed(1)}초 늦음`};
+      else if(over>0.6)   scanRes[l.id]={kind:"bad", msg:`${over.toFixed(1)}초 넘침`};
+      else if(late>0.3)   scanRes[l.id]={kind:"warn",msg:`시작 ${late.toFixed(1)}초 늦음`};
+      else if(over>0.3)   scanRes[l.id]={kind:"warn",msg:`${over.toFixed(1)}초 넘침`};
+      else if(end<want*0.5&&want>1) scanRes[l.id]={kind:"warn",msg:"많이 짧음"};
+      else                scanRes[l.id]={kind:"ok",  msg:"좋음"};
+    }catch(e){ scanRes[l.id]={kind:"bad",msg:"읽기 실패"} }
+  }
+  ac.close();
+  drawAdmin();
+  const bad=Object.entries(scanRes).filter(([,v])=>v.kind==="bad");
+  const warn=Object.entries(scanRes).filter(([,v])=>v.kind==="warn");
+  const name=id=>{const l=lineById(+id);const s2=subs.find(x=>x.line_id===+id);
+    return `${id}번 ${l.char}(${s2?s2.person:"?"})`};
+  progDone(
+    (bad.length||warn.length)
+      ? `점검 끝 — <b style="color:#ff9a92">다시 찍는 게 좋은 줄 ${bad.length}개</b>`
+        + (bad.length?`: ${bad.map(([id,v])=>esc(name(id))+" "+esc(v.msg)).join(", ")}`:"")
+        + (warn.length?`<br><b style="color:var(--amber)">살짝 아쉬운 줄 ${warn.length}개</b>: `
+            + warn.map(([id,v])=>esc(name(id))+" "+esc(v.msg)).join(", ") : "")
+        + `<br>표 오른쪽 <b>◀ 50 / 50 ▶</b> 로 밀고 당겨 맞출 수도 있습니다.`
+      : `점검 끝 — <b style="color:var(--ok)">${Object.keys(scanRes).length}줄 모두 타이밍 좋습니다.</b>`);
+  b.disabled=false;
+};
+$("#aReload").onclick=async()=>{await pull();drawAdmin()};
+
+let mixSkipped=[];
+/* 따로따로 녹음한 목소리를 자연스럽게 잇기 위한 다듬기
+   · 앞뒤 묵음을 잘라 제자리에서 시작하게
+   · 사람마다 다른 목소리 크기를 비슷하게
+   · 양끝에 아주 짧은 페이드를 넣어 '툭' 끊기는 소리 방지 */
+const TARGET_RMS=0.09;
+function polish(buf){
+  const d=buf.getChannelData(0), n=d.length, sr=buf.sampleRate;
+  let peak=0; for(let i=0;i<n;i++){const v=Math.abs(d[i]); if(v>peak)peak=v}
+  const thr=Math.max(peak*0.045, 0.004);
+  let a=0,b=n-1;
+  while(a<n-1 && Math.abs(d[a])<thr) a++;
+  while(b>a    && Math.abs(d[b])<thr) b--;
+  a=Math.max(0,a-Math.round(sr*0.025));          // 숨소리까지 조금 남긴다
+  b=Math.min(n-1,b+Math.round(sr*0.05));
+  let sum=0; for(let i=a;i<=b;i++)sum+=d[i]*d[i];
+  const rms=Math.sqrt(sum/Math.max(1,b-a+1));
+  let gain=rms>0.0005 ? TARGET_RMS/rms : 1;
+  gain=Math.max(0.35,Math.min(3.5,gain));         // 과하게 키워 잡음이 뜨지 않게
+  if(peak*gain>0.97) gain=0.97/peak;
+  return {offset:a/sr, dur:Math.max(0.05,(b-a)/sr), gain};
+}
+async function mix(){
+  if(!subs.length)throw new Error("제출된 녹음이 아직 없습니다.");
+  const sr=44100,dur=PROJECT.dubEnd+1,tmp=new AudioContext();
+  const load=async u=>tmp.decodeAudioData(await(await fetch(u)).arrayBuffer());
+  let bed=null;
+  if(PROJECT.videoBgm){try{bed=await load(PROJECT.videoBgm)}catch(e){console.warn("bgm 없음")}}
+  const voices=[]; mixSkipped=[];
+  for(const s of subs){const l=lineById(s.line_id);if(!l)continue;
+    const off=(s.offset_ms||0)/1000;                 // 선생님이 맞춘 미세조정
+    try{voices.push({at:Math.max(0,l.s+off),buf:await load(pub(s.path))})}
+    catch(e){console.warn("skip",s.path,e);mixSkipped.push(`${l.id}번 ${l.char}(${s.person})`)}}
+  if(!voices.length)throw new Error("녹음을 하나도 읽지 못했습니다. 이 브라우저가 녹음 형식을 지원하지 않을 수 있습니다 — 크롬으로 열어보세요.");
+  tmp.close();
+  const off=new OfflineAudioContext(2,Math.ceil(sr*dur),sr);
+  if(bed){const b=off.createBufferSource();b.buffer=bed;const g=off.createGain();g.gain.value=.85;
+    b.connect(g).connect(off.destination);b.start(0)}
+  for(const v of voices){
+    const {offset,dur,gain}=polish(v.buf);
+    const src=off.createBufferSource(); src.buffer=v.buf;
+    const g=off.createGain(); const at=v.at, fade=0.015;
+    g.gain.setValueAtTime(0.0001,at);
+    g.gain.linearRampToValueAtTime(gain,at+fade);
+    g.gain.setValueAtTime(gain,Math.max(at+fade,at+dur-0.03));
+    g.gain.linearRampToValueAtTime(0.0001,at+dur);
+    src.connect(g).connect(off.destination);
+    src.start(at,offset,dur);
+  }
+  return off.startRendering();
+}
+function wav(buf){
+  const ch=buf.numberOfChannels,n=buf.length,sr=buf.sampleRate;
+  const d=new DataView(new ArrayBuffer(44+n*ch*2));
+  const W=(o,s)=>{for(let i=0;i<s.length;i++)d.setUint8(o+i,s.charCodeAt(i))};
+  W(0,"RIFF");d.setUint32(4,36+n*ch*2,true);W(8,"WAVEfmt ");
+  d.setUint32(16,16,true);d.setUint16(20,1,true);d.setUint16(22,ch,true);
+  d.setUint32(24,sr,true);d.setUint32(28,sr*ch*2,true);d.setUint16(32,ch*2,true);
+  d.setUint16(34,16,true);W(36,"data");d.setUint32(40,n*ch*2,true);
+  const C=Array.from({length:ch},(_,c)=>buf.getChannelData(c));let o=44;
+  for(let i=0;i<n;i++)for(let c=0;c<ch;c++){const v=Math.max(-1,Math.min(1,C[c][i]));
+    d.setInt16(o,v<0?v*0x8000:v*0x7fff,true);o+=2}
+  return d.buffer;
+}
+const skipNote=()=>mixSkipped.length
+  ? `<br><b style="color:var(--rec)">읽지 못해 빠진 녹음 ${mixSkipped.length}개:</b> ${esc(mixSkipped.join(", "))}
+     — 이 브라우저가 그 형식을 못 읽는 경우가 많습니다. <b>크롬</b>으로 다시 해보세요.` : "";
+
+/* ---------- 진행 표시 ---------- */
+function prog(pct,msg){
+  $("#aBar").classList.remove("hide");
+  if(pct!=null)$("#aFill").style.width=Math.max(0,Math.min(100,pct))+"%";
+  if(msg!=null)$("#aStat").innerHTML=msg;
+}
+const progDone=msg=>{$("#aFill").style.width="100%";$("#aStat").innerHTML=msg;
+  setTimeout(()=>$("#aBar").classList.add("hide"),4000)};
+const dl=(blob,name)=>{const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download=name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),20000)};
+
+/* ---------- ZIP (압축 없이 묶기만 — 오디오는 이미 압축돼 있다) ---------- */
+const CRCT=(()=>{const t=new Uint32Array(256);
+  for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}
+  return t})();
+function crc32(u8){let c=0xFFFFFFFF;
+  for(let i=0;i<u8.length;i++)c=(c>>>8)^CRCT[(c^u8[i])&0xFF];return (c^0xFFFFFFFF)>>>0}
+function makeZip(files){
+  const enc=new TextEncoder(),parts=[],cen=[];let off=0,n=0;
+  for(const f of files){
+    const nm=enc.encode(f.name),crc=crc32(f.data),sz=f.data.length;
+    const lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true);lh.setUint16(4,20,true);lh.setUint16(6,0x0800,true);
+    lh.setUint32(14,crc,true);lh.setUint32(18,sz,true);lh.setUint32(22,sz,true);
+    lh.setUint16(26,nm.length,true);
+    parts.push(new Uint8Array(lh.buffer),nm,f.data);
+    const ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true);ch.setUint16(4,20,true);ch.setUint16(6,20,true);
+    ch.setUint16(8,0x0800,true);ch.setUint32(16,crc,true);
+    ch.setUint32(20,sz,true);ch.setUint32(24,sz,true);
+    ch.setUint16(28,nm.length,true);ch.setUint32(42,off,true);
+    cen.push(new Uint8Array(ch.buffer),nm);
+    off+=30+nm.length+sz;n++;
+  }
+  const cenSize=cen.reduce((a,b)=>a+b.length,0);
+  const eo=new DataView(new ArrayBuffer(22));
+  eo.setUint32(0,0x06054b50,true);eo.setUint16(8,n,true);eo.setUint16(10,n,true);
+  eo.setUint32(12,cenSize,true);eo.setUint32(16,off,true);
+  return new Blob([...parts,...cen,new Uint8Array(eo.buffer)],{type:"application/zip"});
+}
+
+$("#aPreview").onclick=async()=>{
+  const b=$("#aPreview");b.disabled=true;b.textContent="만드는 중…";
+  try{const m=await mix();const a=$("#aPrev");a.style.display="block";
+    a.src=URL.createObjectURL(new Blob([wav(m)],{type:"audio/wav"}));a.play()}
+  catch(e){$("#aNote").innerHTML=`합본 실패: <b>${esc(e.message)}</b>`}
+  finally{b.disabled=false;b.textContent="▶ 합본 들어보기"}
+};
+$("#aWav").onclick=async()=>{
+  const b=$("#aWav");b.disabled=true;b.textContent="만드는 중…";
+  try{
+    prog(20,"녹음을 모아 소리를 합치는 중…");
+    const m=await mix();
+    dl(new Blob([wav(m)],{type:"audio/wav"}),`${PROJECT.key}_합본음원.wav`);
+    progDone("합본 음원을 내려받았습니다. 편집 프로그램에서 영상에 얹으면 됩니다."+skipNote());
+  }catch(e){prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message)}</b>`)}
+  finally{b.disabled=false;b.textContent="⤓ 합본 음원만 (WAV)"}
+};
+
+/* ===================== 최종 영상 한 파일 (MP4) ===================== */
+let ffProgCb=null;
+/* 한 번 쓰고 닫는다 — ffmpeg.wasm 은 작업이 끝나면 런타임을 닫아버려 재사용이 안 된다.
+   코어는 브라우저 캐시에 남으므로 두 번째부터는 1~2초면 다시 뜬다. */
+async function getFFmpeg(){
+  prog(5,"영상 합치기 도구를 준비하는 중… <b>처음 한 번만</b> 내려받습니다 (약 32MB).");
+  const [mod,util]=await Promise.all([
+    import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/+esm"),
+    import("https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/+esm")
+  ]);
+  const CORE="https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
+  /* 워커 스크립트는 같은 출처여야 한다. CDN 워커는 상대경로 import 를 쓰기 때문에
+     blob 으로 그대로 감싸면 깨진다 → 절대경로로 불러오는 한 줄짜리 모듈 워커를 만든다. */
+  const wurl=URL.createObjectURL(new Blob(
+    ['import "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/worker.js";'],
+    {type:"text/javascript"}));
+  const ff=new mod.FFmpeg();
+  ff.on("progress",({progress})=>ffProgCb&&ffProgCb(progress));
+  const [c,w]=await Promise.all([
+    util.toBlobURL(`${CORE}/ffmpeg-core.js`,"text/javascript"),
+    util.toBlobURL(`${CORE}/ffmpeg-core.wasm`,"application/wasm")
+  ]);
+  await ff.load({coreURL:c,wasmURL:w,classWorkerURL:wurl});
+  ff.util=util; return ff;
+}
+$("#aMp4").onclick=async()=>{
+  const b=$("#aMp4");b.disabled=true;b.textContent="만드는 중…";
+  try{
+    prog(3,"녹음을 모아 소리를 합치는 중…");
+    const mixed=await mix();
+    const wavData=new Uint8Array(wav(mixed));
+
+    let ff;
+    try{ ff=await getFFmpeg(); }
+    catch(e){
+      dl(new Blob([wavData],{type:"audio/wav"}),`${PROJECT.key}_합본음원.wav`);
+      throw new Error("영상 합치기 도구를 못 받았습니다 (인터넷 차단일 수 있습니다). "+
+        "대신 합본 음원을 내려받았습니다 — 터미널에서 <code>build_final.py</code> 를 돌리면 영상까지 합쳐집니다.");
+    }
+
+    prog(45,"영상을 읽는 중…");
+    await ff.writeFile("v.mp4",await ff.util.fetchFile(PROJECT.video));
+    await ff.writeFile("a.wav",wavData);
+
+    ffProgCb=pc=>prog(55+Math.min(1,pc)*42,"영상과 소리를 합치는 중…");
+    await ff.exec(["-i","v.mp4","-i","a.wav","-map","0:v:0","-map","1:a:0",
+      "-c:v","copy","-c:a","aac","-b:a","192k","-t",String(PROJECT.dubEnd),
+      "-movflags","+faststart","out.mp4"]);
+    ffProgCb=null;
+
+    const data=await ff.readFile("out.mp4");
+    try{ff.terminate()}catch(e){}
+    if(!data||!data.length)throw new Error("합치기 결과가 비어 있습니다.");
+
+    dl(new Blob([data],{type:"video/mp4"}),`${PROJECT.key}_본편.mp4`);
+    const miss=PROJECT.lines.length-subs.length;
+    progDone(`✅ 본편 영상 완성 — ${(data.length/1048576).toFixed(1)} MB. (타이틀·크레딧은 빠져 있습니다)`+
+      (miss>0?` (아직 ${miss}줄이 비어 있어 그 자리는 배경음악만 들어갔습니다)`:"")+skipNote());
+  }catch(e){
+    ffProgCb=null;
+    prog(0,`<b style="color:var(--rec)">${e.message}</b>`);
+  }finally{b.disabled=false;b.textContent="⤓ 본편 영상 받기 (MP4)"}
+};
+
+/* ===================== 개별 녹음 모아서 (ZIP) ===================== */
+$("#aZip").onclick=async()=>{
+  const b=$("#aZip");b.disabled=true;b.textContent="모으는 중…";
+  try{
+    if(!subs.length)throw new Error("제출된 녹음이 아직 없습니다.");
+    const list=[...subs].sort((a,c)=>a.line_id-c.line_id), files=[];
+    for(let i=0;i<list.length;i++){
+      const s=list[i], l=lineById(s.line_id);
+      prog(i/list.length*95,`녹음 내려받는 중… ${i+1} / ${list.length}`);
+      const buf=new Uint8Array(await (await fetch(pub(s.path))).arrayBuffer());
+      const ext=(s.path.split(".").pop()||"webm");
+      const nm=`${String(s.line_id).padStart(2,"0")}_${l?l.char:""}_${s.person}.${ext}`
+        .replace(/[\/\\:*?"<>|]/g,"_");
+      files.push({name:nm,data:buf});
+    }
+    const txt=PROJECT.lines.map(l=>{
+      const s=subs.find(x=>x.line_id===l.id);
+      return `${String(l.id).padStart(2,"0")}  ${tc(l.s)} - ${tc(l.e)}  [${l.char}]  ${s?s.person:"(미제출)"}\n      ${l.text}`;
+    }).join("\n\n");
+    files.push({name:"대사목록.txt",data:new TextEncoder().encode("\ufeff"+txt)});
+    dl(makeZip(files),`${PROJECT.key}_녹음모음.zip`);
+    progDone(`${list.length}개 녹음을 ZIP 한 파일로 내려받았습니다. (대사목록.txt 포함)`);
+  }catch(e){prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message)}</b>`)}
+  finally{b.disabled=false;b.textContent="⤓ 개별 녹음 모아서 (ZIP)"}
+};
+
+/* ===================== 타이밍 맞추기 ===================== */
+let tapIdx=0,taps=[];
+$("#aTime").onclick=()=>{show("vTime");$("#tvid").src=PROJECT.video;tapIdx=0;taps=[];drawTaps()};
+$("#tBack").onclick=()=>{$("#tvid").pause();openAdmin()};
+$("#tStart").onclick=()=>{const v=$("#tvid");tapIdx=0;taps=[];drawTaps();v.currentTime=0;v.play()};
+$("#tTap").onclick=tap;
+$("#tUndo").onclick=()=>{if(tapIdx>0){tapIdx--;taps.pop();drawTaps()}};
+function tap(){if(tapIdx>=PROJECT.lines.length)return;
+  taps.push(+$("#tvid").currentTime.toFixed(2));tapIdx++;drawTaps()}
+function drawTaps(){
+  const box=$("#tList");box.innerHTML="";
+  PROJECT.lines.forEach((l,i)=>{
+    const d=document.createElement("div");d.className="tapline"+(i===tapIdx?" cur":"");
+    const s=taps[i];
+    d.innerHTML=`<span class="mono" style="color:var(--dim);width:28px">${l.id}</span>
+      <span class="chip" style="background:${chOf(l.char).color}">${esc(l.char)}</span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.text)}</span>
+      <span class="mono" style="color:${s!=null?"var(--ok)":"var(--dim)"}">${s!=null?tc(s):"—"}</span>`;
+    box.append(d);
+  });
+  box.children[tapIdx]?.scrollIntoView({block:"center"});
+}
+$("#tSave").onclick=()=>{
+  const out=PROJECT.lines.map((l,i)=>{
+    const s=taps[i]!=null?taps[i]:l.s;
+    const e=taps[i+1]!=null?+(taps[i+1]-0.05).toFixed(2):+(s+(l.e-l.s)).toFixed(2);
+    return `    { id: ${l.id}, team:"${l.team}", char:"${l.char}", s: ${(+s).toFixed(2)}, e: ${e.toFixed(2)},\n`+
+           `      text:${JSON.stringify(l.text)},\n      ipa:${JSON.stringify(l.ipa||"")},\n      trans:${JSON.stringify(l.trans||"")} },`;
+  }).join("\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([`  lines: [\n${out}\n  ],\n`],{type:"text/plain"}));
+  a.download="lines.txt";a.click();
+};
+
+/* ===================== 단축키 ===================== */
+addEventListener("keydown",e=>{
+  if(/input|select|textarea/i.test(e.target.tagName))return;
+  if(!$("#vTime").classList.contains("hide")){
+    if(e.code==="Space"){e.preventDefault();tap()}
+    return;
+  }
+  if($("#vBooth").classList.contains("hide"))return;
+  if(e.key==="Escape")stopAll();
+  if(e.key==="1")setMode("practice");
+  if(e.key==="2")setMode("dub");
+});
+/* 녹음 중에 다른 탭으로 가면 소리가 끊기거나 타이밍이 어긋난다 — 바로 알려준다 */
+addEventListener("visibilitychange",()=>{
+  if(document.hidden&&(recording||noteBusy))
+    say("⚠ 녹음 중에는 <b>이 창을 계속 보고 계셔야</b> 합니다. 다른 탭으로 가면 소리가 끊길 수 있습니다.",1);
+});
+addEventListener("beforeunload",e=>{
+  if(!who)return;
+  const lineLeft=linesOf(who).some(l=>tkCur(l.id)&&!subs.some(s=>s.line_id===l.id));
+  const noteLeft=!!noteTake&&!notes.some(n=>n.person===who.person);
+  if(recording||noteBusy||lineLeft||noteLeft){e.preventDefault();e.returnValue=""}
+});
+
+isAdmin?openAdmin():openLobby();
+</script>
+</body>
+</html>

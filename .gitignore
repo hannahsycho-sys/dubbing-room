@@ -1,0 +1,8 @@
+# 원본 영상(40MB)은 올리지 않습니다 — 사이트는 clip88.mp4 만 씁니다
+video/clip.mp4
+video/*.wav
+# 자동 생성물
+_credits/
+본편만*.mp4
+완성본*.mp4
+.DS_Store
