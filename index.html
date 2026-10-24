@@ -655,6 +655,7 @@ vid.addEventListener("error",()=>{
   $("#bStat").after(f);
 });
 const bgm=PROJECT.videoBgm?Object.assign(new Audio(PROJECT.videoBgm),{preload:"auto"}):null;
+if(bgm)bgm.preservesPitch=bgm.mozPreservesPitch=bgm.webkitPreservesPitch=true;
 
 /* 파형 비교용 — 목소리만 분리한 트랙을 한 번만 받아 둔다 */
 const VOCALS = (PROJECT.videoVocals || (PROJECT.videoBgm||"").replace("_bgm","_vocals")) || null;
@@ -1198,7 +1199,22 @@ function unlockMedia(){
 addEventListener("pointerdown",unlockMedia,true);
 addEventListener("touchstart",unlockMedia,true);
 
-const rate=()=>mode==="practice"?+$("#pRate").value:1;
+/* 배속. 혹시라도 값이 비거나 이상하면 1배로 돌아간다 —
+   0 이 들어가면 영상이 그 자리에 멈춰 버린다. */
+const rate=()=>{
+  if(mode!=="practice")return 1;
+  const v=parseFloat($("#pRate").value);
+  return (isFinite(v)&&v>0.05&&v<=4)?v:1;
+};
+/* 예전에는 배속을 바꿔도 다음 재생 때까지 그대로였다 — 새로고침해야 바뀌는 것처럼 보였다.
+   지금 돌아가는 영상·배경음악·내 목소리에 즉시 적용한다. */
+$("#pRate").onchange=()=>{
+  const r=rate();
+  try{ vid.playbackRate=r }catch(e){}
+  if(bgm){ try{ bgm.playbackRate=r }catch(e){} }
+  if(mineA){ try{ mineA.playbackRate=r }catch(e){} }
+  mixPlaying.forEach(a=>{ try{ a.playbackRate=r }catch(e){} });
+};
 
 /* 소리 규칙
    · 연습 모드 — 언제나 원본 (원어민 발음을 들어야 따라 하니까)

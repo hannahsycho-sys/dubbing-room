@@ -204,7 +204,6 @@ else:
     os.makedirs(MC.OUT, exist_ok=True)
     P = MC.read_project()
     voices = MC.fetch_notes(P["key"])
-    MC.make_title(P)
     sched = MC.make_credits(P, voices)
 
     # 소감 음성 내려받기
@@ -218,45 +217,56 @@ else:
         except Exception as e:
             print(f"  소감 건너뜀 {n['person']}: {e}")
 
-    title_png = os.path.join(MC.OUT, "title.png")
-    cred_png  = os.path.join(MC.OUT, "credits.png")
+    import motion as MO, hand as HD, music as MU
     speed, ctotal = sched["speed"], sched["total"]
+    TCUE, CCUE = MO.CUE_TITLE, MO.CUE_CRED
+    TVOL, CVOL = MO.VOL_TITLE, MO.VOL_CRED
+    DUCK = float(MO._mix("musicDuck", 0.45))
 
-    # 1) 타이틀 (무음)
+    # 1) 오프닝 — 손으로 그린 듯한 막 오르는 장면 + 음악
+    print(f"  오프닝 {TITLE_SEC:.1f}초 그리는 중…")
     t_mp4 = os.path.join(tmp, "title.mp4")
-    subprocess.run([FF,"-hide_banner","-loglevel","error","-y",
-        "-loop","1","-framerate","30","-t",str(TITLE_SEC),"-i",title_png,
-        "-f","lavfi","-t",str(TITLE_SEC),"-i","anullsrc=r=44100:cl=stereo",
-        "-vf",f"fade=t=in:st=0:d=0.7,fade=t=out:st={TITLE_SEC-0.7:.2f}:d=0.7,format=yuv420p",
-        "-c:v","libx264","-preset","medium","-crf","23","-r","30",
-        "-c:a","aac","-b:a","192k","-shortest",t_mp4], check=True)
+    t_wav = MO.write_wav(MU.render(TCUE, TITLE_SEC, TVOL, fade_in=0.6, fade_out=0.9),
+                         os.path.join(tmp, "title_music.wav"))
+    MO.encode(HD.title_frames(P, TITLE_SEC), TITLE_SEC, t_wav, t_mp4, FF)
 
-    # 2) 크레딧 (스크롤 + 소감 음성)
-    c_mp4 = os.path.join(tmp, "credits.mp4")
-    cin = ["-loop","1","-framerate","30","-t",f"{ctotal:.2f}","-i",cred_png]
-    cfil = [f"[0:v]crop=1280:720:0:'min(max(0\\,{speed:.3f}*t)\\,ih-720)',"
-            f"fade=t=in:st=0:d=1,fade=t=out:st={ctotal-2:.2f}:d=2,format=yuv420p[cv]"]
-    amix_in, ai = [], 1
+    # 2) 크레딧 소리 — 소감 목소리 + 음악(목소리가 나오면 음악이 알아서 눌린다)
+    c_wav = MO.write_wav(MU.render(CCUE, ctotal, CVOL, fade_in=2.0, fade_out=2.6),
+                         os.path.join(tmp, "credits_music.wav"))
+    cin, cfil, amix_in, ai = ["-i", c_wav], [], [], 1
     for n in sched["notes"]:
         f = note_files.get(n["person"])
         if not f: continue
         cin += ["-i", f]
-        dly = int(round(n["t0"]*1000))
+        dly = int(round(n["t0"] * 1000))
         cfil.append(f"[{ai}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
-                    f"loudnorm=I=-20:TP=-2.0:LRA=11,adelay={dly}|{dly}[n{ai}]")
+                    f"loudnorm=I=-18:TP=-2.0:LRA=11,adelay={dly}|{dly}[n{ai}]")
         amix_in.append(f"[n{ai}]"); ai += 1
-    if amix_in:
-        cfil.append("".join(amix_in)+f"amix=inputs={len(amix_in)}:duration=longest:normalize=0,"
-                    f"apad,atrim=0:{ctotal:.2f},alimiter=limit=0.95[ca]")
-    else:
-        cin += ["-f","lavfi","-t",f"{ctotal:.2f}","-i","anullsrc=r=44100:cl=stereo"]
-        cfil.append(f"[{ai}:a]anull[ca]")
-    subprocess.run([FF,"-hide_banner","-loglevel","error","-y",*cin,
-        "-filter_complex",";".join(cfil),"-map","[cv]","-map","[ca]",
-        "-c:v","libx264","-preset","medium","-crf","23","-r","30",
-        "-c:a","aac","-b:a","192k","-t",f"{ctotal:.2f}",c_mp4], check=True)
 
-    # 3) 타이틀 + 본편 + 크레딧 이어붙이기
+    c_audio = os.path.join(tmp, "credits_audio.wav")
+    if amix_in:
+        # 감지기를 키워(level_sc) 문턱을 확실히 넘게 해야 실제로 눌린다
+        ratio = max(2.0, min(20.0, 2.0 + DUCK * 16.0))
+        lvsc  = max(1.0, min(12.0, 1.0 + DUCK * 10.0))
+        cfil.append("".join(amix_in) + f"amix=inputs={len(amix_in)}:duration=longest:normalize=0,"
+                    f"apad,atrim=0:{ctotal:.2f},alimiter=limit=0.95[vo]")
+        cfil.append("[vo]asplit=2[vo1][vosc]")
+        cfil.append(f"[0:a][vosc]sidechaincompress=threshold=0.02:ratio={ratio:.2f}:"
+                    f"level_sc={lvsc:.2f}:attack=20:release=500:makeup=1:knee=4[mus]")
+        cfil.append("[vo1][mus]amix=inputs=2:duration=first:normalize=0,"
+                    "alimiter=limit=0.95[ca]")
+    else:
+        cfil.append(f"[0:a]apad,atrim=0:{ctotal:.2f}[ca]")
+    subprocess.run([FF, "-hide_banner", "-loglevel", "error", "-y", *cin,
+                    "-filter_complex", ";".join(cfil), "-map", "[ca]",
+                    "-t", f"{ctotal:.2f}", "-c:a", "pcm_s16le", c_audio], check=True)
+
+    # 3) 크레딧 그림
+    print(f"  크레딧 {ctotal:.1f}초 그리는 중…")
+    c_mp4 = os.path.join(tmp, "credits.mp4")
+    MO.encode(MO.credits_frames(P, sched, ctotal), ctotal, c_audio, c_mp4, FF)
+
+    # 4) 오프닝 + 본편 + 크레딧 이어붙이기
     print("이어붙이는 중…")
     subprocess.run([FF,"-hide_banner","-loglevel","error","-y",
         "-i",t_mp4,"-i",body,"-i",c_mp4,

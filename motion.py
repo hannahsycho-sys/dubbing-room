@@ -32,6 +32,20 @@ GOLD   = (198, 150, 62)
 
 font = MC.font                 # AppleSDGothicNeo
 
+def _mix(name, dflt):
+    import re as _re
+    src = open(os.path.join(HERE, "segments.js"), encoding="utf-8").read()
+    m = _re.search(rf'{name}\s*:\s*"?([\w.]+)"?', src)
+    if not m: return dflt
+    v = m.group(1)
+    try: return float(v)
+    except ValueError: return v
+
+CUE_TITLE = _mix("titleMusic",  "cinema")   # warm / cinema / calm
+CUE_CRED  = _mix("creditsMusic","warm")
+VOL_TITLE = _mix("titleMusicVol",   0.85)
+VOL_CRED  = _mix("creditsMusicVol", 0.30)   # 소감 목소리에 묻히지 않게 작게
+
 
 # ════════════════════════════════════════════════ 거들어 주는 것들
 def ease_out(x):      return 1 - (1 - x) ** 3
@@ -278,78 +292,32 @@ def credits_frames(P, sched, secs):
         yield np.clip(f, 0, 255).astype(np.uint8)
 
 
-# ════════════════════════════════════════════════ 음악 (직접 합성)
-def _note(f, t, amp, attack, decay):
-    env = np.minimum(t / max(attack, 1e-3), 1.0) * np.exp(-t / decay)
-    env[t < 0] = 0
-    w = (np.sin(2*np.pi*f*t) + 0.34*np.sin(4*np.pi*f*t) + 0.14*np.sin(6*np.pi*f*t))
-    return w * env * amp
+# ════════════════════════════════════════════════ 음악
+# 실제 합성은 music.py 가 한다 (펠트 피아노 · 현 · 진짜 리버브)
+import music as MUSIC
 
-def _mid(n): return 440.0 * 2 ** ((n - 69) / 12.0)
+def music_title(secs, cue=None, vol=None):
+    return MUSIC.render(cue or CUE_TITLE, secs, vol if vol is not None else VOL_TITLE,
+                        fade_in=0.6, fade_out=0.9)
 
-def _reverb(x, mix=0.34):
-    y = x.copy()
-    for d, g in ((0.029, .50), (0.053, .38), (0.081, .29), (0.127, .21), (0.193, .15), (0.281, .10)):
-        k = int(d * SR)
-        y[k:] += x[:-k] * g * mix
-    # 한 극 저역 통과 — 울림을 부드럽게
-    a = 0.30
-    out = np.empty_like(y); acc = 0.0
-    for i in range(0, len(y), 4096):             # 블록으로 나눠 빠르게
-        blk = y[i:i+4096]
-        f = np.empty_like(blk)
-        for j, v in enumerate(blk):
-            acc = acc + a * (v - acc); f[j] = acc
-        out[i:i+4096] = f
-    return out
+def music_credits(secs, cue=None, vol=None):
+    """크레딧은 소감 목소리가 주인공이라 훨씬 작게 깐다"""
+    return MUSIC.render(cue or CUE_CRED, secs, vol if vol is not None else VOL_CRED,
+                        fade_in=2.0, fade_out=2.6)
 
-def _chords(prog, secs):
-    """prog = [(시작초, [미디번호...]), ...] 를 깔린 패드로"""
-    t = np.arange(int(secs * SR)) / SR
-    out = np.zeros_like(t)
-    for k, (t0, notes) in enumerate(prog):
-        t1 = prog[k+1][0] if k+1 < len(prog) else secs
-        rel = t - t0
-        for j, n in enumerate(notes):
-            out += _note(_mid(n), rel, 0.085 / (1 + j*0.35), 0.55, (t1 - t0) * 1.9)
-    return out
-
-def music_title(secs):
-    prog = [(0.0, [57, 60, 64]), (2.1, [53, 57, 60]), (4.0, [48, 55, 60, 64])]
-    x  = _chords(prog, secs)
-    t  = np.arange(int(secs * SR)) / SR
-    x += _note(_mid(36), t, 0.10, 0.9, 7.0)                      # 저음 드론
-    x += _note(_mid(81), t - 1.6, 0.075, 0.004, 2.6)             # 제목 드러날 때 종소리
-    x += _note(_mid(88), t - 2.9, 0.045, 0.004, 2.0)
-    x = _reverb(x, 0.40)
-    x *= np.minimum(t / 0.6, 1.0)
-    x *= np.clip((secs - t) / 0.9, 0, 1)
-    return x
-
-def music_credits(secs):
-    bar, prog, t0 = 3.6, [], 0.0
-    cycle = [[57, 60, 64], [53, 57, 60], [55, 59, 62], [48, 55, 60]]
-    i = 0
-    while t0 < secs:
-        prog.append((t0, cycle[i % len(cycle)])); t0 += bar; i += 1
-    x = _chords(prog, secs) * 0.9
-    t = np.arange(int(secs * SR)) / SR
-    x += _note(_mid(36), t, 0.07, 1.2, secs)
-    for k in range(int(secs // 7.2) + 1):                        # 가끔 울리는 종
-        x += _note(_mid(84 if k % 2 else 79), t - (3.0 + k*7.2), 0.034, 0.004, 2.4)
-    x = _reverb(x, 0.42)
-    x *= np.minimum(t / 2.0, 1.0)
-    x *= np.clip((secs - t) / 2.6, 0, 1)
-    return x
 
 def write_wav(x, path, vol=1.0):
+    """music.render() 가 준 (n,2) 스테레오 배열을 wav 로 쓴다"""
     x = np.asarray(x, np.float32) * vol
+    if x.ndim == 1:
+        x = np.stack([x, x], 1)
     pk = float(np.max(np.abs(x))) or 1.0
-    if pk > 0.97: x = x / pk * 0.97
+    if pk > 0.97:
+        x = x / pk * 0.97
     s = (np.clip(x, -1, 1) * 32767).astype("<i2")
     with wave.open(path, "wb") as w:
         w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR)
-        w.writeframes(np.repeat(s[:, None], 2, 1).tobytes())
+        w.writeframes(s.tobytes())
     return path
 
 

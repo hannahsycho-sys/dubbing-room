@@ -23,7 +23,15 @@ const PROJECT = {
   mix: {
     bgmVolume:   0.9,   // 배경음악 크기 (1.0=그대로, 1.5=1.5배 크게, 0.5=절반)
     voiceVolume: 1.25,  // 코치 목소리 크기
-    titleSec:    4.0,   // 오프닝 타이틀 길이 (초)
+    titleSec:    6.6,   // 오프닝 길이 (초)
+
+    // 음악 — warm(따뜻한 피아노) / cinema(영화 오프닝) / calm(잔잔한 앰비언트)
+    titleMusic:      "warm",
+    creditsMusic:    "warm",
+    titleMusicVol:   0.85,  // 오프닝 음악 크기
+    creditsMusicVol: 0.30,  // 크레딧 음악 — 소감 목소리가 주인공이라 작게
+    musicDuck:       0.45,  // 소감이 나오는 동안 음악을 얼마나 더 줄일지 (0=안 줄임)
+
     fadeIn:      0.8,   // 시작 페이드인 (초)
     fadeOut:     2.6,   // 끝 페이드아웃 (초)
   },
