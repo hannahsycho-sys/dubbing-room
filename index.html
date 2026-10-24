@@ -1305,8 +1305,13 @@ const micAlive=()=>{
 };
 /* 마이크를 잡고, 이미 잡혀 있어도 '아직 살아있는지' 확인한다.
    이어폰을 뽑거나 권한이 바뀌면 스트림이 죽는데, 그대로 쓰면 무음이 녹음된다. */
+/* 녹음되는 소리는 '처리를 거친' recStream 이다 (raw 마이크가 아니다).
+   체인 만들기에 실패하면 raw 로 되돌아간다 — 녹음이 안 되는 일은 없어야 한다. */
+let recStream=null, micGain=null, rawAn=null, agcT=0;
+const AGC_TARGET=0.34, AGC_MIN=1.0, AGC_MAX=10.0;
+
 async function arm(){
-  if(micAlive())return stream;
+  if(micAlive()&&recStream&&micAC&&micAC.state==="running")return recStream;
   if(stream){try{stream.getTracks().forEach(t=>t.stop())}catch(e){}}
   stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}});
   stream.getAudioTracks().forEach(t=>{
@@ -1315,11 +1320,60 @@ async function arm(){
   try{micAC&&micAC.close()}catch(e){}
   micAC=new(window.AudioContext||webkitAudioContext)();
   if(micAC.state==="suspended")await micAC.resume().catch(()=>{});
+
   analyser=micAC.createAnalyser();analyser.fftSize=1024;
-  micAC.createMediaStreamSource(stream).connect(analyser);
-  /* 마이크를 다시 잡아도 미터 루프는 하나만 돌게 한다 */
+  recStream=null; micGain=null; rawAn=null;
+  try{
+    /* 녹음 앱이 하는 일을 그대로 흉내낸다 :
+         저역 잡음 깎기 → 자동으로 키우기 → 고르게 누르기 → 넘치지 않게 막기
+       외장 마이크든 폰 내장 마이크든 비슷한 크기로 녹음되게 하는 것이 목적이다. */
+    const src=micAC.createMediaStreamSource(stream);
+    rawAn=micAC.createAnalyser(); rawAn.fftSize=1024; src.connect(rawAn);
+
+    const hp=micAC.createBiquadFilter(); hp.type="highpass";
+    hp.frequency.value=85; hp.Q.value=0.7;
+
+    micGain=micAC.createGain(); micGain.gain.value=2.0;
+
+    const comp=micAC.createDynamicsCompressor();
+    comp.threshold.value=-26; comp.knee.value=20; comp.ratio.value=3;
+    comp.attack.value=0.005;  comp.release.value=0.20;
+
+    const lim=micAC.createDynamicsCompressor();      // 마지막 안전장치
+    lim.threshold.value=-2.5; lim.knee.value=0; lim.ratio.value=20;
+    lim.attack.value=0.001;   lim.release.value=0.07;
+
+    const dest=micAC.createMediaStreamDestination();
+    src.connect(hp); hp.connect(micGain); micGain.connect(comp);
+    comp.connect(lim); lim.connect(dest);
+    lim.connect(analyser);                           // 미터 = '실제로 녹음되는 소리'
+    if(!dest.stream||!dest.stream.getAudioTracks().length)throw new Error("빈 스트림");
+    recStream=dest.stream;
+    startAGC();
+  }catch(e){
+    console.warn("소리 보정 체인 실패 — 원래 마이크로 녹음합니다",e);
+    recStream=stream; micGain=null; rawAn=null;
+    try{micAC.createMediaStreamSource(stream).connect(analyser)}catch(_){}
+  }
   if(!meterStarted){meterStarted=true;meter();}
-  return stream;
+  return recStream;
+}
+
+/* 자동 음량 — 말소리가 들어올 때만 서서히 올리고, 커지면 빨리 내린다.
+   녹음 중에 급변하면 소리가 출렁이므로 변화를 아주 완만하게 준다. */
+function startAGC(){
+  if(agcT)clearInterval(agcT);
+  const buf=new Uint8Array(1024);
+  agcT=setInterval(()=>{
+    if(!rawAn||!micGain||!micAC||micAC.state!=="running")return;
+    rawAn.getByteTimeDomainData(buf);
+    let pk=0; for(const v of buf){const d=Math.abs(v-128)/128; if(d>pk)pk=d}
+    if(pk<0.012)return;                       // 조용할 때는 건드리지 않는다(잡음 증폭 방지)
+    const want=Math.max(AGC_MIN,Math.min(AGC_MAX,AGC_TARGET/pk));
+    const cur=micGain.gain.value;
+    const next=cur+(want-cur)*(want>cur?0.08:0.30);
+    try{ micGain.gain.setTargetAtTime(next,micAC.currentTime,0.12) }catch(_){}
+  },120);
 }
 let recPeak=0, meterStarted=false, meterTimer=0, micHist=[];
 /* 입력 레벨 측정. rAF 를 쓰면 창이 가려졌을 때 멈춰서
@@ -1476,7 +1530,7 @@ async function record(l){
 function startRec(l,btn){
   bits=[]; recPeak=0;
   const mt=["audio/webm;codecs=opus","audio/webm","audio/mp4"].find(x=>MediaRecorder.isTypeSupported(x));
-  try{ mr=new MediaRecorder(stream,mt?{mimeType:mt}:undefined); }
+  try{ mr=new MediaRecorder(recStream||stream,mt?{mimeType:mt}:undefined); }
   catch(e){ recording=false; say(`녹음기를 열지 못했습니다: ${esc(e.message||e)}`,1); stopAll(); return; }
   mr.ondataavailable=e=>e.data.size&&bits.push(e.data);
   mr.onerror=ev=>{
@@ -1612,7 +1666,7 @@ $("#nRec").onclick=async()=>{
   stopAll();
   noteBits=[];
   const mt=["audio/webm;codecs=opus","audio/webm","audio/mp4"].find(x=>MediaRecorder.isTypeSupported(x));
-  noteRec=new MediaRecorder(stream,mt?{mimeType:mt}:undefined);
+  noteRec=new MediaRecorder(recStream||stream,mt?{mimeType:mt}:undefined);
   noteRec.ondataavailable=e=>e.data.size&&noteBits.push(e.data);
   noteRec.onerror=ev=>{noteBusy=false;say(`소감 녹음 중 오류 (${esc(ev?.error?.name||"unknown")}). 다시 녹음해 주세요.`,1)};
   noteRec.onstop=async()=>{
@@ -1801,8 +1855,14 @@ $("#dDone").onclick=async()=>{
     say(`아직 안 올라간 녹음이 <b>${pend}개</b> 있습니다 — <b>☁ 안 올라간 것 올리기</b> 를 먼저 눌러주세요.`,1);
     return;
   }
+  /* 빠진 것을 모아서 한 번에 알려 준다 — 대사뿐 아니라 크레딧 소감도 본다 */
   const left=my.filter(l=>!subs.some(s=>s.line_id===l.id)).length;
-  if(left&&!confirm(`아직 ${left}줄이 비어 있습니다.\n그래도 '다 끝냈다' 로 표시할까요?`))return;
+  const noNote=!notes.some(n=>n.person===who.person);
+  const miss=[];
+  if(left)   miss.push(`• 아직 녹음 안 한 대사 ${left}줄`);
+  if(noNote) miss.push("• 크레딧 소감 (영상 맨 끝에 들어갑니다)");
+  if(miss.length&&!confirm(
+      `아직 빠진 것이 있습니다.\n\n${miss.join("\n")}\n\n그래도 '다 끝냈다' 로 표시할까요?`))return;
 
   b.disabled=true;b.textContent="보내는 중…";
   try{
