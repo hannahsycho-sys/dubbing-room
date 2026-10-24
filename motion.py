@@ -368,3 +368,37 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ════════════════════════════════════════════════ 사진 위에 글자만 얹는 오프닝
+# 그림을 그리지 않는다. 영상 속 한 장면을 흐리게 깔고 제목만 띄운다.
+# 소리는 영상의 배경음악을 앞에서부터 가져와, 본편으로 끊김 없이 이어진다.
+def photo_title_frames(P, secs, still_path):
+    base = Image.open(still_path).convert("RGB").resize((W, H), Image.LANCZOS)
+    base = base.filter(ImageFilter.GaussianBlur(9))
+    arr = np.asarray(base, np.float32) * 0.42            # 어둡게 깔아 글자가 읽히게
+
+    # 가운데를 살짝 더 어둡게(비네팅) 해서 글자가 뜨게 한다
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    r = np.sqrt(((xx - W/2) / (W*0.80))**2 + ((yy - H/2) / (H*0.84))**2)
+    arr *= np.clip(1.06 - 0.42 * r**2.0, 0.34, 1.0)[..., None]
+
+    L = title_layers(P)
+    n = int(round(secs * FPS))
+    for i in range(n):
+        t = i / FPS
+        f = arr.copy()
+        def put(lay, a):
+            nonlocal f
+            if a > 0.004:
+                f = over(f, lay, a)
+        ta = ease_out(seg(t, 0.55, 1.85))
+        if ta > 0.004:
+            f = over(f, L["glow"], ta * 0.35)
+            f = over(f, L["title"], ta)
+        put(L["kick"], ease_out(seg(t, 1.15, 2.10)))
+        put(L["sub"],  ease_out(seg(t, 1.95, 2.95)))
+
+        f *= ease_in_out(seg(t, 0.0, 0.7))
+        f *= 1 - ease_in_out(seg(t, secs - 1.0, secs))   # 본편으로 디졸브
+        yield np.clip(f, 0, 255).astype(np.uint8)

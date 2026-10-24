@@ -125,6 +125,16 @@ video = os.path.join(HERE, VIDEO)
 if not os.path.exists(video):
     sys.exit(f"영상이 없습니다: {video}")
 
+def probe_dur(path):
+    """영상 길이(초)를 잰다 — ffprobe 없이 ffmpeg 출력에서 읽는다"""
+    out = subprocess.run([FF, "-hide_banner", "-i", path],
+                         capture_output=True, text=True).stderr
+    m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", out)
+    if not m: return 6.0
+    h, mi, se = int(m.group(1)), int(m.group(2)), float(m.group(3))
+    return h * 3600 + mi * 60 + se
+
+
 ins, filt, mixn = [], [], []
 if bed:
     ins += ["-i", bed]
@@ -223,12 +233,35 @@ else:
     TVOL, CVOL = MO.VOL_TITLE, MO.VOL_CRED
     DUCK = float(MO._mix("musicDuck", 0.45))
 
-    # 1) 오프닝 — 손으로 그린 듯한 막 오르는 장면 + 음악
-    print(f"  오프닝 {TITLE_SEC:.1f}초 그리는 중…")
+    # 1) 오프닝
+    #    직접 만든 오프닝 파일(캡컷 등)이 있으면 그것을 쓴다.
+    #    video/오프닝.mp4  또는  오프닝.mp4  를 찾는다.
     t_mp4 = os.path.join(tmp, "title.mp4")
-    t_wav = MO.write_wav(MU.render(TCUE, TITLE_SEC, TVOL, fade_in=0.6, fade_out=0.9),
-                         os.path.join(tmp, "title_music.wav"))
-    MO.encode(HD.title_frames(P, TITLE_SEC), TITLE_SEC, t_wav, t_mp4, FF)
+    mine = next((f for f in (os.path.join(HERE, "video", "오프닝.mp4"),
+                             os.path.join(HERE, "오프닝.mp4"))
+                 if os.path.exists(f)), None)
+    if mine:
+        # 길이·크기·프레임수를 본편에 맞춰 통일하고, 소리가 없으면 무음 트랙을 넣는다
+        has_audio = subprocess.run(
+            [FF.replace("ffmpeg", "ffprobe") if False else FF, "-hide_banner", "-i", mine],
+            capture_output=True, text=True).stderr.find("Audio:") >= 0
+        dur = probe_dur(mine)
+        TITLE_SEC = dur
+        print(f"  오프닝: 직접 만드신 파일을 씁니다 ({os.path.basename(mine)}, {dur:.1f}초)")
+        cmd = [FF, "-hide_banner", "-loglevel", "error", "-y", "-i", mine]
+        if not has_audio:
+            cmd += ["-f", "lavfi", "-t", f"{dur:.2f}", "-i", "anullsrc=r=44100:cl=stereo"]
+            print("    (소리가 없어 무음으로 넣습니다)")
+        cmd += ["-vf", "scale=1280:720:force_original_aspect_ratio=decrease,"
+                       "pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p",
+                "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                "-c:a", "aac", "-b:a", "192k", "-shortest", t_mp4]
+        subprocess.run(cmd, check=True)
+    else:
+        print(f"  오프닝 {TITLE_SEC:.1f}초 그리는 중…")
+        t_wav = MO.write_wav(MU.render(TCUE, TITLE_SEC, TVOL, fade_in=0.6, fade_out=0.9),
+                             os.path.join(tmp, "title_music.wav"))
+        MO.encode(HD.title_frames(P, TITLE_SEC), TITLE_SEC, t_wav, t_mp4, FF)
 
     # 2) 크레딧 소리 — 소감 목소리 + 음악(목소리가 나오면 음악이 알아서 눌린다)
     c_wav = MO.write_wav(MU.render(CCUE, ctotal, CVOL, fade_in=2.0, fade_out=2.6),

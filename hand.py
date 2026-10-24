@@ -166,16 +166,45 @@ def valance(seed):
 
 # ───────────────────────────────────────── 손글씨 느낌 글자
 def text_mask(text, f, y, spacing=0):
+    """글자를 한 자씩 찍고, 각 글자가 차지한 가로 구간도 같이 돌려준다.
+       (한 자씩 찍으면 자간이 미세하게 흐트러져 오히려 손으로 쓴 느낌이 난다)"""
     im = Image.new("L", (W, H), 0)
     d = ImageDraw.Draw(im)
-    if spacing:
-        total = sum(d.textlength(c, font=f) + spacing for c in text) - spacing
-        x = (W - total) / 2
-        for c in text:
-            d.text((x, y), c, font=f, fill=255); x += d.textlength(c, font=f) + spacing
+    widths = [d.textlength(c, font=f) for c in text]
+    total = sum(widths) + (spacing * (len(text) - 1) if spacing else 0)
+    x = (W - total) / 2
+    spans = []
+    for c, w in zip(text, widths):
+        d.text((x, y), c, font=f, fill=255)
+        if c.strip():
+            spans.append((x, x + w))
+        x += w + (spacing or 0)
+    return np.asarray(im, np.float32) / 255.0, spans
+
+
+def write_reveal(mask, spans, prog, seed):
+    """prog 0~1 — 왼쪽부터 한 글자씩 '쓰여지는' 모습.
+       지금 쓰는 글자 안에서는 선이 흐르듯 번지고, 끝에는 잉크가 고인다."""
+    if not spans:
+        return mask * 0.0
+    if prog >= 0.999:
+        return mask
+    if prog <= 0.0:
+        return mask * 0.0
+    n = len(spans)
+    p = prog * n
+    i = int(p)
+    if i >= n:
+        cut = W + 20.0
     else:
-        d.text(((W - d.textlength(text, font=f)) / 2, y), text, font=f, fill=255)
-    return np.asarray(im, np.float32) / 255.0
+        x0, x1 = spans[i]
+        cut = x0 + (x1 - x0) * (p - i)
+    xx = np.arange(W, dtype=np.float32)[None, :]
+    wob = smooth_noise(H, 1, 16, seed)[:, 0] * 3.2          # 펜이 똑바로 안 지나간다
+    cutcol = cut + wob[:, None]
+    a = np.clip((cutcol - xx) / 2.4, 0, 1)
+    a *= 1.0 + 0.34 * np.exp(-((xx - cutcol) / 5.5) ** 2)   # 젖은 잉크가 고인 자리
+    return np.clip(mask * a, 0, 1.2)
 
 
 def inkify(mask, seed, rough=0.55, jitter=2.0):
@@ -209,12 +238,17 @@ def draw_one(P, t, secs, seed, L):
         a = (mask * alpha)[..., None]
         bg[:] = bg * (1 - a) + color[None, None, :] * a
 
-    ta = ease_out(seg(t, 1.70, 2.95))
-    if ta > 0.004:
-        put(inkify(L["title"], seed * 7 + 1, 0.78, 4.2), ta, INK)
-    put(inkify(L["kick"],  seed * 7 + 2, 0.60, 1.8), ease_out(seg(t, 2.45, 3.30)), RED_DK)
-    put(inkify(L["sub"],   seed * 7 + 3, 0.55, 2.0), ease_out(seg(t, 3.00, 3.95)), INK * 0.82 + PAPER * 0.18)
-    put(inkify(L["team"],  seed * 7 + 4, 0.55, 2.0), ease_out(seg(t, 3.35, 4.25)), RED_DK)
+    def write(key, t0, t1, color, sd, rough, jit):
+        """t0~t1 동안 글자를 한 자씩 써 나간다"""
+        pr = ease_in_out(seg(t, t0, t1))
+        if pr <= 0.002: return
+        m, spans = L[key]
+        put(inkify(write_reveal(m, spans, pr, sd), sd, rough, jit), 1.0, color)
+
+    write("kick",  1.25, 2.05, RED_DK, seed * 7 + 2, 0.60, 1.8)
+    write("title", 2.05, 3.55, INK,    seed * 7 + 1, 0.78, 4.2)
+    write("sub",   3.50, 4.35, INK * 0.82 + PAPER * 0.18, seed * 7 + 3, 0.55, 2.0)
+    write("team",  4.30, 5.05, RED_DK, seed * 7 + 4, 0.55, 2.0)
 
     # 막
     if cw > 0:
@@ -238,7 +272,7 @@ def layers(P):
     return {
         "kick":  text_mask("S O R I T U N E   D U B B I N G", font(23, True), 232, spacing=3),
         "title": text_mask(title, font(68, True), 288),
-        "sub":   text_mask(sub, font(30), 382) if sub else np.zeros((H, W), np.float32),
+        "sub":   text_mask(sub, font(30), 382) if sub else (np.zeros((H, W), np.float32), []),
         "team":  text_mask("플로라 팀", font(27, True), 468),
     }
 
