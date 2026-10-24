@@ -848,7 +848,9 @@ function drawTL(){
 }
 /* 막대의 한 지점부터 영상 끝까지 이어서 재생한다 */
 function goFrom(t){
-  stopAll(); vid.playbackRate=1;
+  /* 연습 모드에서 고른 배속을 그대로 따라간다.
+     (예전에는 1배속으로 되돌려서, 느리게 맞춰 놓고 막대를 옮기면 원속도로 돌아갔다) */
+  stopAll(); vid.playbackRate=rate();
   const F=FULL();
   t=Math.max(F.start,Math.min(F.end-0.1,t));
   seekTo(t).then(()=>{ applyAudio(t); return playSafe() }).then(()=>{
