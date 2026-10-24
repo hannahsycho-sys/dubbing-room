@@ -489,6 +489,7 @@ tr.justin td{animation:flashin 2.4s ease-out}
       <button class="btn sm" id="aMp4">⤓ 본편 영상 받기 (MP4)</button>
       <button class="btn sm alt" id="aWav">⤓ 합본 음원만 (WAV)</button>
       <button class="btn sm alt" id="aZip">⤓ 개별 녹음 모아서 (ZIP)</button>
+      <button class="btn sm alt" id="aNoteZip">⤓ 크레딧 소감만 (ZIP)</button>
       <button class="btn sm alt" id="aScan">🔎 타이밍 일괄 점검</button>
       <button class="btn sm alt hide" id="aTime">⏱ 타이밍 맞추기</button>
     </div>
@@ -2400,6 +2401,67 @@ $("#aZip").onclick=async()=>{
     progDone(`${list.length}개 녹음을 ZIP 한 파일로 내려받았습니다. (대사목록.txt 포함)`);
   }catch(e){prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message)}</b>`)}
   finally{b.disabled=false;b.textContent="⤓ 개별 녹음 모아서 (ZIP)"}
+};
+
+/* 크레딧 소감만 따로 — 개별 파일 + 전부 이어 붙인 합본을 한 ZIP 에 담는다.
+   순서는 엔딩 크레딧에 올라가는 순서(segments.js 의 cast 차례)와 똑같이 맞춘다. */
+$("#aNoteZip").onclick=async()=>{
+  const b=$("#aNoteZip");b.disabled=true;b.textContent="모으는 중…";
+  try{
+    if(!notes.length)throw new Error("올라온 크레딧 소감이 아직 없습니다.");
+    const order=PROJECT.cast.map(c=>c.person);
+    const list=[...notes].sort((x,y)=>order.indexOf(x.person)-order.indexOf(y.person));
+    const files=[], decoded=[], failed=[];
+    const ac=new (window.AudioContext||webkitAudioContext)();
+
+    for(let i=0;i<list.length;i++){
+      const n=list[i];
+      prog(i/list.length*70,`소감 내려받는 중… ${i+1} / ${list.length}`);
+      const raw=new Uint8Array(await (await fetch(pub(n.path))).arrayBuffer());
+      const ext=(n.path.split(".").pop()||"webm");
+      const nm=`${String(i+1).padStart(2,"0")}_${n.person}.${ext}`.replace(/[\/\\:*?"<>|]/g,"_");
+      files.push({name:nm,data:raw});
+      /* 합본용으로 따로 풀어 둔다 (원본은 ZIP 에 그대로 들어간다) */
+      try{ decoded.push({person:n.person,buf:await ac.decodeAudioData(raw.slice().buffer)}); }
+      catch(e){ failed.push(n.person); }
+    }
+
+    const marks=[];
+    if(decoded.length){
+      prog(80,"소감을 크레딧 순서대로 이어 붙이는 중…");
+      const GAP=0.6, SR=48000, HEAD=0.3;
+      const total=decoded.reduce((a,d)=>a+d.buf.duration,0)+GAP*(decoded.length-1)+HEAD+0.6;
+      const off=new OfflineAudioContext(2,Math.ceil(SR*total),SR);
+      let t=HEAD;
+      for(const d of decoded){
+        /* 사람마다 마이크가 달라 크기가 제각각이라 비슷하게 맞춰 준다 */
+        let pk=0; const c0=d.buf.getChannelData(0);
+        for(let i=0;i<c0.length;i+=16){const v=Math.abs(c0[i]); if(v>pk)pk=v}
+        const g=off.createGain();
+        g.gain.value=Math.max(0.5,Math.min(8,0.72/(pk||0.72)));
+        const src=off.createBufferSource(); src.buffer=d.buf;
+        src.connect(g).connect(off.destination); src.start(t);
+        marks.push({person:d.person,at:t,dur:d.buf.duration});
+        t+=d.buf.duration+GAP;
+      }
+      files.unshift({name:"00_전체소감_합본.wav",data:new Uint8Array(wav(await off.startRendering()))});
+    }
+    try{ac.close()}catch(e){}
+
+    const miss=PROJECT.cast.filter(c=>!notes.some(n=>n.person===c.person)).map(c=>c.person);
+    const mm=x=>`${String(Math.floor(x/60)).padStart(2,"0")}:${(x%60).toFixed(1).padStart(4,"0")}`;
+    const txt="크레딧 순서\n\n"
+      + marks.map((m,i)=>`${String(i+1).padStart(2,"0")}  ${m.person}\n      합본 ${mm(m.at)} 부터 · ${m.dur.toFixed(1)}초`).join("\n")
+      + (failed.length?`\n\n합본에 못 넣은 것 (${failed.length}명)\n  ${failed.join(", ")}\n  — 개별 파일은 들어 있습니다. 크롬에서 다시 받아보세요.`:"")
+      + (miss.length?`\n\n아직 안 하신 분 (${miss.length}명)\n  ${miss.join(", ")}`:"\n\n전원 완료");
+    files.push({name:"소감목록.txt",data:new TextEncoder().encode("﻿"+txt)});
+
+    dl(makeZip(files),`${PROJECT.key}_크레딧소감.zip`);
+    progDone(`소감 <b>${list.length}개</b> + 합본 1개를 ZIP 으로 내려받았습니다.`
+      + (failed.length?` 합본에 못 넣은 것 <b>${failed.length}개</b>.`:"")
+      + (miss.length?` 아직 <b>${miss.length}명</b> 남았습니다.`:" 전원 완료!"));
+  }catch(e){prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message)}</b>`)}
+  finally{b.disabled=false;b.textContent="⤓ 크레딧 소감만 (ZIP)"}
 };
 
 /* ===================== 타이밍 맞추기 ===================== */
