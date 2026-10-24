@@ -35,7 +35,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
   padding:7px 12px;transition:.12s;white-space:nowrap}
 .ghost:hover{color:var(--ink);border-color:var(--amber)}
 
-.wrap{flex:1;overflow-y:auto;padding:26px 18px 70px;
+.wrap{flex:1;overflow-y:auto;padding:var(--wrapTop,26px) 18px 70px;
   background:radial-gradient(ellipse 760px 400px at 50% -60px,var(--amber-soft),transparent 70%)}
 .inner{max-width:1200px;margin:0 auto}
 .kicker{font-family:"Courier Prime",monospace;font-size:11px;letter-spacing:.2em;
@@ -99,7 +99,26 @@ h1{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
 
 /* 부스 */
 .booth{display:grid;grid-template-columns:1fr 460px;gap:16px;align-items:start}
-@media(max-width:1020px){.booth{grid-template-columns:1fr}}
+/* 넓은 화면 — 영상·막대·조작칸은 위에 붙여 두고, 대사 목록만 패널 안에서 스크롤한다.
+   (레이첼 코치처럼 대사가 많으면 페이지가 길어져 영상이 화면 밖으로 밀려났다) */
+@media(min-width:1021px){
+  .booth>div:first-child{position:sticky;top:0;align-self:start}
+  .side{position:sticky;top:0;max-height:calc(100vh - 100px)}
+  #bCues{overflow-y:auto;min-height:0;flex:1 1 auto;overscroll-behavior:contain}
+}
+
+/* 좁은 화면 — 한 줄로 쌓되, 대사가 많은 코치도 스크롤 중에 영상이 계속 보이도록 영상을 위에 고정한다.
+   (첫 칸을 display:contents 로 풀어야 sticky 가 부스 전체 높이만큼 버틴다) */
+@media(max-width:1020px){
+  .booth{display:block}
+  .booth>div:first-child{display:contents}
+  /* display:contents 는 박스만 없애고 DOM 부모는 그대로이므로 자손 선택자로 잡는다 */
+  .booth .stagebox,.booth .tl,.booth .tlkey,.booth .deck{
+    max-width:min(100%,68vh);margin-left:auto;margin-right:auto}
+  .booth .stagebox{position:sticky;top:calc(var(--wrapTop,26px) * -1);z-index:6;
+    box-shadow:0 16px 30px -20px #000}
+  .booth>.side{margin-top:16px}
+}
 .stagebox{position:relative;border:1px solid var(--line);border-radius:7px;overflow:hidden;
   background:#000;box-shadow:0 20px 50px -26px #000}
 .stagebox video{display:block;width:100%;aspect-ratio:16/9;background:#000}
@@ -138,6 +157,7 @@ h1{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
 
 /* 타임라인 */
 .tl{position:relative;height:38px;margin-top:11px;border:1px solid var(--line);border-radius:6px;
+  touch-action:pan-y;cursor:pointer;
   background:var(--panel);overflow:hidden;cursor:pointer}
 .tl .blk{position:absolute;top:7px;height:24px;border-radius:3px;opacity:.26;transition:.12s}
 .tl .blk.my{opacity:1;box-shadow:0 0 0 1px rgba(0,0,0,.35) inset}
@@ -300,6 +320,21 @@ tr.justin td{animation:flashin 2.4s ease-out}
   .cue{padding:16px 15px}
   .cue .row{gap:8px}
 }
+
+/* 좁은 화면(폰) — 영상 위에 겹쳐지는 글씨를 영상 크기에 맞춰 줄인다.
+   폰에서는 영상 높이가 200px 남짓이라, 데스크톱 크기 그대로 두면 자막이 화면을 덮는다. */
+@media (max-width:620px){
+  .nowline{bottom:8px;padding:0 10px}
+  .nowline span{font-size:12.5px;line-height:1.34;padding:5px 9px;border-radius:4px;max-width:97%}
+  .nowline em{font-size:10px;margin-top:3px}
+  .cd{font-size:52px}
+  .cd small{font-size:11px;margin-top:8px}
+  .cuego{font-size:34px}
+  .shad{padding:8px 0 18px}
+  .shad b{font-size:16px}
+  .shad small{font-size:11px;margin-top:3px}
+  .lamp{top:8px;left:8px;padding:4px 8px;font-size:10px}
+}
 </style>
 </head>
 <body>
@@ -408,6 +443,7 @@ tr.justin td{animation:flashin 2.4s ease-out}
             <span class="num" id="pNum"></span>
             <span class="track"><span id="pFill"></span></span>
             <button class="btn sm alt" id="dUpAll">☁ 안 올라간 것 올리기</button>
+            <button class="btn sm" id="dDone">✅ 녹음 다 끝냈어요</button>
           </div>
         </div>
         <p class="status" id="bStat"></p>
@@ -548,7 +584,12 @@ const offOf=id=>(subs.find(s=>s.line_id===id)?.offset_ms)||0;
 
 /* takes[대사번호] = { list:[{blob,url,dur}], chosen:고른번호 }
    한 대사에 여러 번 녹음해두고 들어보며 고르거나 지울 수 있다. */
-let who=null, subs=[], notes=[], takes={}, mode="practice";
+let who=null, subs=[], notes=[], dones=[], takes={}, mode="practice";
+/* submissions 표의 line_id 는 대사 번호(1..N) 인데, 두 개를 특별하게 쓴다.
+     0  = 크레딧 소감 녹음
+    -1  = "녹음 다 끝냈습니다" 선언 (파일 없음, 표시용) */
+const DONE_ID=-1;
+const isDone=p=>dones.some(d=>d.person===p);
 const tkList=id=>takes[id]?.list||[];
 const tkCur=id=>{const t=takes[id];
   return t&&t.list.length?t.list[Math.min(t.chosen,t.list.length-1)]:null};
@@ -705,7 +746,8 @@ async function openLobby(){
       const b=document.createElement("button");b.className="person";
       b.innerHTML=`<span class="nm">${esc(c.person)}</span>
         <span class="chips">${c.chars.map(x=>`<span class="chip" style="background:${chOf(x).color}">${esc(x)}</span>`).join("")}</span>
-        <span class="pr ${done===my.length?"full":""}">${done}/${my.length}</span>`;
+        <span class="pr ${done===my.length?"full":""}">${isDone(c.person)?"✅ ":""}${done}/${my.length}</span>`;
+      if(isDone(c.person))b.title=`${c.person} 님은 녹음을 끝냈다고 표시했습니다.`;
       b.onclick=()=>openBooth(c);
       pl.append(b);
     }
@@ -788,6 +830,8 @@ function drawTL(){
     d.style.background=isMy?chOf(l.char).color:"var(--dim)";
     d.title=`${l.char} · ${tc(l.s)} · ${l.text}`;
     d.onclick=e=>{
+      if(tlHandled)return;                 /* 방금 막대를 끌었다 — 대사 하나 재생은 하지 않는다 */
+      if(job){return}                      /* 재생 중이면 막대는 '구간 이동'으로 동작(부모가 처리) */
       e.stopPropagation();
       if(isMy){
         document.querySelector(`#bCues .cue[data-id="${l.id}"]`)?.scrollIntoView({block:"center",behavior:"smooth"});
@@ -801,15 +845,56 @@ function drawTL(){
     el.append(d);
   }
 }
-$("#tl").onclick=e=>{
-  const F=FULL(),r=e.currentTarget.getBoundingClientRect();
-  const t=F.start+(e.clientX-r.left)/r.width*(F.end-F.start);
-  stopAll();vid.playbackRate=1;
-  seekTo(t).then(playSafe).then(()=>{
-    applyAudio(t);
+/* 막대의 한 지점부터 영상 끝까지 이어서 재생한다 */
+function goFrom(t){
+  stopAll(); vid.playbackRate=1;
+  const F=FULL();
+  t=Math.max(F.start,Math.min(F.end-0.1,t));
+  seekTo(t).then(()=>{ applyAudio(t); return playSafe() }).then(()=>{
     run({end:F.end,tick:x=>{showNow(x);bgmSync(x)},done:stopAll});
   });
+}
+$("#tl").onclick=e=>{
+  if(tlHandled)return;                     /* 끌어서 옮긴 직후의 click 은 무시 */
+  const F=FULL(),r=e.currentTarget.getBoundingClientRect();
+  goFrom(F.start+(e.clientX-r.left)/r.width*(F.end-F.start));
 };
+
+/* ---- 막대 끌어서 구간 이동(스크럽) ----
+   재생 중에는 어디를 눌러도 그 자리로 이동해 '계속' 재생된다.
+   멈춰 있을 때 톡 누르면 기존처럼 그 대사만 들려주는 동작이 그대로 남는다. */
+let tlHandled=false;
+(function(){
+  const el=$("#tl");
+  let pid=null, moved=false, wasLive=false, sx=0;
+  const tAt=x=>{ const F=FULL(), r=el.getBoundingClientRect();
+    return F.start+Math.max(0,Math.min(1,(x-r.left)/r.width))*(F.end-F.start) };
+  const paint=t=>{ const F=FULL();
+    $("#tlNow").style.left=Math.max(0,Math.min(100,(t-F.start)/(F.end-F.start)*100))+"%" };
+  const mark=()=>{ tlHandled=true; setTimeout(()=>{tlHandled=false},0) };
+
+  el.addEventListener("pointerdown",e=>{
+    if(recording)return;                   /* 녹음 중에는 막대를 잠근다 — 녹음을 끊으면 안 된다 */
+    pid=e.pointerId; moved=false; sx=e.clientX; wasLive=!!job;
+    try{el.setPointerCapture(pid)}catch(_){}
+  });
+  el.addEventListener("pointermove",e=>{
+    if(pid===null||e.pointerId!==pid)return;
+    if(!moved){ if(Math.abs(e.clientX-sx)<5)return; moved=true; stopAll() }
+    const t=tAt(e.clientX); paint(t); showNow(t);
+    if(!vid.seeking){ try{vid.currentTime=t}catch(_){} }   /* seek 중에는 건너뛴다 — 폰에서 버벅임 방지 */
+  });
+  const finish=e=>{
+    if(pid===null||(e.pointerId!=null&&e.pointerId!==pid))return;
+    try{el.releasePointerCapture(pid)}catch(_){}
+    pid=null;
+    if(!moved&&!wasLive)return;            /* 멈춘 상태에서 그냥 톡 — 기존 클릭 동작에 맡긴다 */
+    mark();
+    goFrom(tAt(e.clientX));
+  };
+  el.addEventListener("pointerup",finish);
+  el.addEventListener("pointercancel",()=>{pid=null});
+})();
 
 /* ---- 대사 카드 ---- */
 function drawCues(){
@@ -916,6 +1001,12 @@ function drawCues(){
     $("#dUpAll").textContent=pend?`☁ 안 올라간 ${pend}개 올리기`
       :any?"☁ 전부 올라갔습니다":"아래에서 ● 녹음 을 눌러 시작하세요";
     $("#dUpAll").disabled=!pend||!online;
+    const fin=isDone(who.person), bD=$("#dDone");
+    bD.textContent=fin?"✅ 완료함 — 누르면 취소":"✅ 녹음 다 끝냈어요";
+    bD.classList.toggle("alt",fin);
+    bD.disabled=!online;
+    bD.title=fin?"선생님 화면에 '완료' 로 표시돼 있습니다."
+                :"다 끝내셨으면 눌러주세요. 선생님 화면에 완료로 표시됩니다.";
   }
 }
 $("#pIpa").onchange=$("#pKo").onchange=$("#dIpa").onchange=()=>drawCues();
@@ -1686,6 +1777,44 @@ async function upload(l){
     await pull();drawCues();drawTL();return true;
   }catch(e){console.warn(e);return false}
 }
+/* 다 끝냈다는 표시 — 파일이 아니라 'line_id = -1' 짜리 기록 한 줄을 남긴다.
+   선생님 화면에서 누가 끝났는지 바로 보인다. 눌렀다가 취소도 된다. */
+$("#dDone").onclick=async()=>{
+  const b=$("#dDone");
+  if(!online){say("인터넷이 연결되어 있지 않아 완료 표시를 보낼 수 없습니다.",1);return}
+  const my=linesOf(who);
+
+  if(isDone(who.person)){
+    if(!confirm("완료 표시를 취소할까요?\n녹음한 것은 그대로 남습니다."))return;
+    b.disabled=true;b.textContent="취소하는 중…";
+    try{
+      const {error}=await sb.from("submissions").delete()
+        .eq("project",PROJECT.key).eq("line_id",DONE_ID).eq("person",who.person);
+      if(error)throw error;
+      await pull(); say("완료 표시를 취소했습니다.");
+    }catch(e){ say(`취소하지 못했습니다: ${esc(e.message||e)}`,1) }
+    b.disabled=false; drawCues(); return;
+  }
+
+  const pend=my.filter(l=>takes[l.id]&&!subs.some(s=>s.line_id===l.id)).length;
+  if(pend){
+    say(`아직 안 올라간 녹음이 <b>${pend}개</b> 있습니다 — <b>☁ 안 올라간 것 올리기</b> 를 먼저 눌러주세요.`,1);
+    return;
+  }
+  const left=my.filter(l=>!subs.some(s=>s.line_id===l.id)).length;
+  if(left&&!confirm(`아직 ${left}줄이 비어 있습니다.\n그래도 '다 끝냈다' 로 표시할까요?`))return;
+
+  b.disabled=true;b.textContent="보내는 중…";
+  try{
+    const {error}=await sb.from("submissions").insert({project:PROJECT.key,line_id:DONE_ID,
+      team:who.team,char:"완료",person:who.person,
+      path:`__done__/${safe(who.person)}`,dur:0});
+    if(error)throw error;
+    await pull();
+    say("<b>수고하셨습니다!</b> 완료로 표시했습니다. 더 녹음하고 싶으면 다시 눌러 취소하면 됩니다.");
+  }catch(e){ say(`완료 표시를 보내지 못했습니다: ${esc(e.message||e)}`,1) }
+  b.disabled=false; drawCues();
+};
 $("#dUpAll").onclick=async()=>{
   const b=$("#dUpAll");b.disabled=true;b.textContent="올리는 중…";
   for(const l of linesOf(who))if(tkCur(l.id)&&!subs.some(s=>s.line_id===l.id))await upload(l);
@@ -1696,15 +1825,18 @@ async function pull(){
   const {data,error}=await sb.from("submissions").select("*").eq("project",PROJECT.key);
   /* 네트워크가 잠깐 끊겼다고 '아무것도 제출 안 됨' 으로 보이면 안 된다 — 직전 값을 유지한다 */
   if(error){console.warn("목록 받기 실패(이전 상태 유지)",error);return}
-  const best={}, bestNote={};
+  const best={}, bestNote={}, bestDone={};
   for(const r of data||[]){
     if(r.line_id===0){                       // 0 번은 '크레딧 소감'
       if(!bestNote[r.person]||new Date(r.created_at)>new Date(bestNote[r.person].created_at))
         bestNote[r.person]=r;
+    }else if(r.line_id===DONE_ID){           // -1 번은 '녹음 다 끝냈습니다' 표시
+      if(!bestDone[r.person]||new Date(r.created_at)>new Date(bestDone[r.person].created_at))
+        bestDone[r.person]=r;
     }else if(!best[r.line_id]||new Date(r.created_at)>new Date(best[r.line_id].created_at))
       best[r.line_id]=r;
   }
-  subs=Object.values(best); notes=Object.values(bestNote);
+  subs=Object.values(best); notes=Object.values(bestNote); dones=Object.values(bestDone);
 }
 const pub=p=>sb.storage.from(CONFIG.BUCKET).getPublicUrl(p).data.publicUrl;
 
@@ -1755,6 +1887,32 @@ function drawAdmin(){
        <code>~/.dubtools/bin/python ~/더빙룸/build_final.py</code> 를 돌려야 나옵니다.`
     : `<b>config.js 에 Supabase 주소가 비어 있습니다.</b> 채우면 여기에 전원 현황이 뜹니다.`;
   const box=$("#aCast");box.innerHTML="";
+
+  /* 참가자 현황 — 누가 끝났는지 한눈에 본다 */
+  {
+    const h=document.createElement("div");
+    h.innerHTML=`<h2 style="font-size:16px;margin:4px 0 8px">참가자 현황</h2>`;
+    const tb=document.createElement("table");
+    tb.innerHTML=`<thead><tr><th>코치</th><th>맡은 줄</th><th>올라온 줄</th>
+      <th>크레딧 소감</th><th>본인 완료 선언</th></tr></thead><tbody></tbody>`;
+    const body=tb.querySelector("tbody");
+    for(const c of PROJECT.cast){
+      const mine=PROJECT.lines.filter(l=>l.team===c.team&&c.chars.includes(l.char));
+      const up=mine.filter(l=>subs.some(x=>x.line_id===l.id)).length;
+      const note=notes.some(n=>n.person===c.person);
+      const fin=isDone(c.person);
+      const full=mine.length&&up===mine.length;
+      const tr=document.createElement("tr");
+      tr.innerHTML=`<td><b>${esc(c.person)}</b></td>
+        <td class="c mono">${mine.length}</td>
+        <td class="c mono" style="color:${full?"var(--ok)":up?"var(--amber)":"var(--dim)"}">${up} / ${mine.length}</td>
+        <td class="c">${note?'<span class="dot y"></span>있음':'<span class="dot n"></span>아직'}</td>
+        <td class="c">${fin?'<b style="color:var(--ok)">✅ 끝냈습니다</b>':'<span style="color:var(--dim)">—</span>'}</td>`;
+      body.append(tr);
+    }
+    h.append(tb);box.append(h);
+  }
+
   for(const [tk,t] of Object.entries(PROJECT.teams)){
     const h=document.createElement("div");
     h.innerHTML=`<h2 style="font-size:16px;margin:22px 0 8px">${esc(t.label)}
