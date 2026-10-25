@@ -854,9 +854,12 @@ function drawTL(){
 function goFrom(t){
   /* 연습 모드에서 고른 배속을 그대로 따라간다.
      (예전에는 1배속으로 되돌려서, 느리게 맞춰 놓고 막대를 옮기면 원속도로 돌아갔다) */
+  const wasMix=mixMode;
   stopAll(); vid.playbackRate=rate();
   const F=FULL();
   t=Math.max(F.start,Math.min(F.end-0.1,t));
+  /* 더빙을 듣던 중이었다면 목소리까지 같이 이어서 — 배경음악만 남지 않게 */
+  if(wasMix){ playMix(t); return; }
   seekTo(t).then(()=>{ applyAudio(t); return playSafe() }).then(()=>{
     run({end:F.end,tick:x=>{showNow(x);bgmSync(x)},done:stopAll});
   });
@@ -1170,7 +1173,7 @@ function stopAll(){
   if(recording)endRec();
   if(noteBusy)stopNote();
   if(mineA){mineA.pause();mineA=null;}
-  mixPlaying.forEach(a=>{try{a.pause()}catch(e){}}); mixPlaying=[];
+  mixPlaying.forEach(a=>{try{a.pause()}catch(e){}}); mixPlaying=[]; mixMode=false;
   if(shadT){clearInterval(shadT);shadT=0}
   $("#ovl").classList.add("off");$("#lamp").classList.remove("on");$("#shad").classList.remove("on");
   $("#cueGo").classList.remove("on");$("#cueFill").style.width="0";
@@ -1320,6 +1323,7 @@ $("#pMine").onclick=()=>{
 
 /* ===================== 녹음 ===================== */
 let stream=null,mr=null,bits=[],recording=false,analyser=null,t0=0,mineA=null,mixPlaying=[];
+let mixMode=false;   // ▶ 지금까지 더빙 들어보기 로 재생 중인지
 let micAC=null;
 const micAlive=()=>{
   const t=stream&&stream.getAudioTracks&&stream.getAudioTracks()[0];
@@ -1626,7 +1630,9 @@ async function overlay(l){
     if(!fired&&t>=l.s+off){fired=true;mineA.play().catch(()=>{})}
   },done:stopAll});
 }
-$("#dMix").onclick=async()=>{
+/* 영상 전체를 더빙과 함께 들려준다.
+   from 을 주면 그 지점부터 — 막대를 옮겼을 때 목소리가 끊기지 않게 하려는 것. */
+async function playMix(from){
   stopAll();
   const F=FULL();
   /* 영상 전체에서 '지금 소리가 있는' 모든 대사 — 내 테이크 + 다른 분들이 올린 것 */
@@ -1637,11 +1643,27 @@ $("#dMix").onclick=async()=>{
   const fired=new Set();
   const mineN=cues.filter(c=>c.person==="나").length, otherN=cues.length-mineN;
 
+  const start=Math.max(F.start,Math.min(F.end-0.1, from==null?F.start:from));
+  /* 이미 지나간 대사는 다시 울리지 않게 미리 표시 */
+  for(const c of cues) if(c.l.e<=start) fired.add(c.l.id);
+
+  mixMode=true;
   vid.playbackRate=1;
-  await seekTo(F.start); await playSafe();
-  applyAudio(F.start);
-  say(`영상 전체를 들려줍니다 — 내 녹음 <b>${mineN}</b>개${otherN?` + 다른 분 <b>${otherN}</b>개`:""},
-    아직 비어 있는 ${PROJECT.lines.length-cues.length}줄은 조용히 지나갑니다.`,1);
+  await seekTo(start); await playSafe();
+  applyAudio(start);
+
+  /* 옮긴 자리가 어떤 대사 한가운데라면, 그 대사도 중간부터 같이 틀어 준다 */
+  for(const c of cues){
+    if(start>c.l.s && start<c.l.e){
+      fired.add(c.l.id);
+      const a=players.get(c.l.id);
+      try{ a.currentTime=Math.max(0,start-c.l.s); a.play().catch(()=>{}) }catch(e){}
+    }
+  }
+
+  if(from==null)
+    say(`영상 전체를 들려줍니다 — 내 녹음 <b>${mineN}</b>개${otherN?` + 다른 분 <b>${otherN}</b>개`:""},
+      아직 비어 있는 ${PROJECT.lines.length-cues.length}줄은 조용히 지나갑니다.`,1);
 
   run({end:F.end,tick:t=>{
     showNow(t); bgmSync(t);
@@ -1657,7 +1679,8 @@ $("#dMix").onclick=async()=>{
       }
     }
   },done:stopAll});
-};
+}
+$("#dMix").onclick=()=>playMix();
 
 /* ===================== 크레딧 소감 (목소리) ===================== */
 const NOTE_MAX=25;                      // 너무 길어지지 않게 상한
