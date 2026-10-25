@@ -586,6 +586,45 @@ const offOf=id=>(subs.find(s=>s.line_id===id)?.offset_ms)||0;
 const gainOf=id=>(+(subs.find(s=>s.line_id===id)?.gain_db)||0);
 const dbToMul=db=>Math.pow(10,(+db||0)/20);
 
+/* 음질 보정 — 0 끄기 / 1 약하게 / 2 보통 / 3 강하게 */
+const CLEAN_NAMES=["끄기","약하게","보통","강하게"];
+const CLEAN_CFG=[null,
+  {hp:75,eq:1.5,thr:-42,red:6},
+  {hp:80,eq:2.0,thr:-38,red:10},
+  {hp:85,eq:2.5,thr:-34,red:14}];
+const cleanOf=person=>{
+  const r=subs.concat(notes).find(x=>x.person===person);
+  return r?Math.max(0,Math.min(3,+r.clean||0)):0;
+};
+/* 브라우저에서 들어볼 때도 보정을 걸어 귀로 판단할 수 있게 한다.
+   최종 영상은 ffmpeg 가 더 정교하게 처리하지만 방향은 같다.
+     저역 깎기 → 3kHz 살짝 올려 또렷하게 → 말 사이 조용한 구간을 더 눌러 '쉬이—' 줄이기 */
+async function cleanBuffer(buf,lv){
+  const cfg=CLEAN_CFG[lv]; if(!cfg)return buf;
+  const off=new OfflineAudioContext(buf.numberOfChannels,buf.length,buf.sampleRate);
+  const src=off.createBufferSource(); src.buffer=buf;
+  const hp=off.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=cfg.hp; hp.Q.value=0.7;
+  const eq=off.createBiquadFilter(); eq.type="peaking"; eq.frequency.value=3000; eq.Q.value=1.4; eq.gain.value=cfg.eq;
+  src.connect(hp); hp.connect(eq); eq.connect(off.destination); src.start();
+  const out=await off.startRendering();
+  const sr=out.sampleRate;
+  const thr=Math.pow(10,cfg.thr/20), floorG=Math.pow(10,-cfg.red/20);
+  const eUp=Math.exp(-1/(0.005*sr)), eDn=Math.exp(-1/(0.080*sr));
+  const gUp=Math.exp(-1/(0.004*sr)), gDn=Math.exp(-1/(0.150*sr));
+  for(let c=0;c<out.numberOfChannels;c++){
+    const d=out.getChannelData(c);
+    let env=0,g=1;
+    for(let i=0;i<d.length;i++){
+      const a=Math.abs(d[i]);
+      env = a>env ? eUp*env+(1-eUp)*a : eDn*env+(1-eDn)*a;
+      const want = env>=thr ? 1 : floorG;
+      g = want>g ? gUp*g+(1-gUp)*want : gDn*g+(1-gDn)*want;
+      d[i]*=g;
+    }
+  }
+  return out;
+}
+
 /* takes[대사번호] = { list:[{blob,url,dur}], chosen:고른번호 }
    한 대사에 여러 번 녹음해두고 들어보며 고르거나 지울 수 있다. */
 let who=null, subs=[], notes=[], dones=[], takes={}, mode="practice";
@@ -2016,7 +2055,7 @@ function drawAdmin(){
     h.innerHTML=`<h2 style="font-size:16px;margin:4px 0 8px">참가자 현황</h2>`;
     const tb=document.createElement("table");
     tb.innerHTML=`<thead><tr><th>코치</th><th>맡은 줄</th><th>올라온 줄</th>
-      <th>크레딧 소감</th><th>본인 완료 선언</th><th>볼륨 보정</th></tr></thead><tbody></tbody>`;
+      <th>크레딧 소감</th><th>본인 완료 선언</th><th>볼륨 보정</th><th>음질 보정</th></tr></thead><tbody></tbody>`;
     const body=tb.querySelector("tbody");
     for(const c of PROJECT.cast){
       const mine=PROJECT.lines.filter(l=>l.team===c.team&&c.chars.includes(l.char));
@@ -2030,9 +2069,9 @@ function drawAdmin(){
         <td class="c mono" style="color:${full?"var(--ok)":up?"var(--amber)":"var(--dim)"}">${up} / ${mine.length}</td>
         <td class="c">${note?"":'<span class="dot n"></span>아직'}</td>
         <td class="c">${fin?'<b style="color:var(--ok)">✅ 끝냈습니다</b>':'<span style="color:var(--dim)">—</span>'}</td>
-        <td></td>`;
+        <td></td><td></td>`;
       if(note)tr.children[3].append(mkNotePlay(notes.find(n=>n.person===c.person)));
-      if(up)tr.lastElementChild.append(mkGain(c.person));
+      if(up){ tr.children[5].append(mkGain(c.person)); tr.children[6].append(mkClean(c.person)); }
       body.append(tr);
     }
     h.append(tb);box.append(h);
@@ -2068,9 +2107,9 @@ function drawAdmin(){
 /* 크레딧 소감 들어보기 — 볼륨 보정을 걸어서 들려준다.
    그래야 "몇 dB 올릴지" 를 바로 귀로 확인할 수 있다.
    파일을 blob 으로 받아 와서 트는 이유 : 다른 출처 파일은 Web Audio 로 못 키운다. */
-let notePrev=null, noteCtx=null;
+let noteSrc=null, noteCtx=null;
 function stopNotePrev(){
-  if(notePrev){ try{notePrev.pause()}catch(e){} notePrev=null }
+  if(noteSrc){ try{noteSrc.stop()}catch(e){} try{noteSrc.disconnect()}catch(e){} noteSrc=null }
   if(noteCtx){ try{noteCtx.close()}catch(e){} noteCtx=null }
   $$("#aCast .noteplay").forEach(x=>{x.textContent="▶ 들어보기";x.dataset.on="0"});
 }
@@ -2078,25 +2117,25 @@ function mkNotePlay(n){
   const b=document.createElement("button");
   b.className="mini noteplay"; b.dataset.on="0";
   b.textContent="▶ 들어보기";
-  b.title=`${(+n.dur||0).toFixed(1)}초 · 볼륨 보정을 적용해서 들려줍니다`;
+  b.title=`${(+n.dur||0).toFixed(1)}초 · 볼륨·음질 보정을 적용해서 들려줍니다`;
   b.onclick=async()=>{
     const wasOn=b.dataset.on==="1";
     stopNotePrev();
     if(wasOn)return;                       // 누르던 것을 다시 누르면 멈춤
-    b.textContent="받는 중…"; b.disabled=true;
+    b.textContent="준비 중…"; b.disabled=true;
     try{
-      const blob=await (await fetch(pub(n.path))).blob();
-      const a=new Audio(URL.createObjectURL(blob));
-      try{
-        const ctx=new (window.AudioContext||webkitAudioContext)();
-        const g=ctx.createGain();
-        g.gain.value=dbToMul((subs.concat(notes).find(x=>x.person===n.person)||{}).gain_db);
-        ctx.createMediaElementSource(a).connect(g).connect(ctx.destination);
-        noteCtx=ctx;
-      }catch(e){ console.warn("볼륨 적용 실패 — 원래 크기로 들려줍니다",e) }
-      a.onended=()=>stopNotePrev();
-      await a.play();
-      notePrev=a; b.dataset.on="1"; b.textContent="■ 멈춤";
+      const ab=await (await fetch(pub(n.path))).arrayBuffer();
+      const ctx=new (window.AudioContext||webkitAudioContext)();
+      let buf=await ctx.decodeAudioData(ab);
+      const lv=cleanOf(n.person);
+      if(lv) buf=await cleanBuffer(buf,lv);
+      const src=ctx.createBufferSource(); src.buffer=buf;
+      const g=ctx.createGain(); g.gain.value=dbToMul(n.gain_db);
+      src.connect(g).connect(ctx.destination);
+      src.onended=()=>stopNotePrev();
+      src.start();
+      noteSrc=src; noteCtx=ctx;
+      b.dataset.on="1"; b.textContent="■ 멈춤";
     }catch(e){
       $("#aNote").innerHTML=`소감을 재생하지 못했습니다: <b>${esc(e.message||e)}</b>`;
       b.textContent="▶ 들어보기";
@@ -2104,6 +2143,37 @@ function mkNotePlay(n){
     b.disabled=false;
   };
   return b;
+}
+
+/* 음질 보정 — 잡음을 줄이고 또렷하게. 단계만 저장하고 원본은 그대로 둔다. */
+function mkClean(person){
+  const box=document.createElement("div"); box.className="nudge";
+  const val=document.createElement("span"); val.className="nval mono";
+  const paint=()=>{const v=cleanOf(person);
+    val.textContent=CLEAN_NAMES[v];
+    val.style.color=v?"var(--amber)":"var(--dim)";};
+  const save=async nv=>{
+    box.querySelectorAll("button").forEach(x=>x.disabled=true);
+    const {error}=await sb.from("submissions").update({clean:nv})
+      .eq("project",PROJECT.key).eq("person",person);
+    box.querySelectorAll("button").forEach(x=>x.disabled=false);
+    if(error){
+      $("#aNote").innerHTML = /clean/.test(error.message||"")
+        ? `음질 보정을 쓰려면 Supabase → SQL Editor 에서 아래 한 줄을 실행하세요.<br>
+           <code>alter table public.submissions add column if not exists clean smallint not null default 0;</code>`
+        : `음질 보정 저장 실패: <b>${esc(error.message)}</b>`;
+      return;
+    }
+    subs.forEach(x=>{ if(x.person===person) x.clean=nv });
+    notes.forEach(x=>{ if(x.person===person) x.clean=nv });
+    paint(); stopNotePrev();
+  };
+  const b=(t,fn,title)=>{const x=document.createElement("button");
+    x.className="mini"; x.textContent=t; x.title=title||""; x.onclick=()=>fn(); return x};
+  box.append(b("◀",()=>save(Math.max(0,cleanOf(person)-1)),"한 단계 약하게"), val,
+             b("▶",()=>save(Math.min(3,cleanOf(person)+1)),"한 단계 강하게"));
+  paint();
+  return box;
 }
 
 /* 사람별 볼륨 보정 — 기기마다 녹음 크기가 달라 한 분만 작게 들리는 일이 생긴다.
@@ -2339,8 +2409,12 @@ async function mix(){
   const voices=[]; mixSkipped=[];
   for(const s of subs){const l=lineById(s.line_id);if(!l)continue;
     const off=(s.offset_ms||0)/1000;                 // 선생님이 맞춘 미세조정
-    try{voices.push({at:Math.max(0,l.s+off),buf:await load(pub(s.path)),
-                     vg:dbToMul(s.gain_db)})}
+    try{
+      let bf=await load(pub(s.path));
+      const lv=Math.max(0,Math.min(3,+s.clean||0));
+      if(lv) bf=await cleanBuffer(bf,lv);
+      voices.push({at:Math.max(0,l.s+off),buf:bf,vg:dbToMul(s.gain_db)});
+    }
     catch(e){console.warn("skip",s.path,e);mixSkipped.push(`${l.id}번 ${l.char}(${s.person})`)}}
   if(!voices.length)throw new Error("녹음을 하나도 읽지 못했습니다. 이 브라우저가 녹음 형식을 지원하지 않을 수 있습니다 — 크롬으로 열어보세요.");
   tmp.close();

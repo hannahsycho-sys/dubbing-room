@@ -125,6 +125,20 @@ video = os.path.join(HERE, VIDEO)
 if not os.path.exists(video):
     sys.exit(f"영상이 없습니다: {video}")
 
+# 음질 보정 — 단계별 ffmpeg 체인.
+#   저역 잡음 깎기 → 잡음 줄이기(afftdn) → 또렷하게(3kHz 살짝 올리기)
+#   강하게 단계에서는 치찰음까지 눌러 준다.
+CLEAN_CHAIN = {
+    0: "",
+    1: "highpass=f=75,afftdn=nr=8:nf=-28,equalizer=f=3000:t=q:w=1.4:g=1.5,",
+    2: "highpass=f=80,afftdn=nr=14:nf=-32,equalizer=f=3000:t=q:w=1.4:g=2,",
+    3: "highpass=f=85,afftdn=nr=20:nf=-36,equalizer=f=3000:t=q:w=1.4:g=2.5,deesser,",
+}
+def clean_of(row):
+    try: return CLEAN_CHAIN.get(int(row.get("clean") or 0), "")
+    except (TypeError, ValueError): return ""
+
+
 def probe_dur(path):
     """영상 길이(초)를 잰다 — ffprobe 없이 ffmpeg 출력에서 읽는다"""
     out = subprocess.run([FF, "-hide_banner", "-i", path],
@@ -151,11 +165,13 @@ for i, l in enumerate([l for l in have if l["id"] in files], start=1):
     # 관리자 화면에서 맞춘 사람별 볼륨 보정
     gdb = float(latest[l["id"]].get("gain_db") or 0)
     gfil = f"volume={gdb:+.1f}dB," if abs(gdb) > 0.05 else ""
+    cfil_ = clean_of(latest[l["id"]])
     # 따로 녹음한 목소리를 자연스럽게 잇기 :
     #   앞 묵음 제거 → 음량 평준화 → 양끝 짧은 페이드 → 제자리로 밀기
     filt.append(
         f"[{i}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
         f"silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.025:detection=peak,"
+        f"{cfil_}"
         f"loudnorm=I=-20:TP=-2.0:LRA=11,"
         f"afade=t=in:st=0:d=0.015,"
         f"{gfil}"
@@ -276,10 +292,12 @@ else:
         if not f: continue
         cin += ["-i", f]
         dly = int(round(n["t0"] * 1000))
-        ng = float((voices.get(n["person"]) or {}).get("gain_db") or 0)
+        nv_ = voices.get(n["person"]) or {}
+        ng = float(nv_.get("gain_db") or 0)
         ngf = f"volume={ng:+.1f}dB," if abs(ng) > 0.05 else ""
+        ncl = clean_of(nv_)
         cfil.append(f"[{ai}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
-                    f"loudnorm=I=-18:TP=-2.0:LRA=11,{ngf}adelay={dly}|{dly}[n{ai}]")
+                    f"{ncl}loudnorm=I=-18:TP=-2.0:LRA=11,{ngf}adelay={dly}|{dly}[n{ai}]")
         amix_in.append(f"[n{ai}]"); ai += 1
 
     c_audio = os.path.join(tmp, "credits_audio.wav")

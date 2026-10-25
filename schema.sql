@@ -20,11 +20,13 @@ create table if not exists public.submissions (
   dur         real,
   offset_ms   int         not null default 0,   -- 싱크 미세조정 (음수=당기기, 양수=밀기)
   gain_db     real        not null default 0,   -- 볼륨 보정 (dB, 음수=줄이기 양수=키우기)
+  clean       smallint    not null default 0,   -- 음질 보정 (0=끄기 1=약하게 2=보통 3=강하게)
   created_at  timestamptz not null default now()
 );
 -- 이미 만들어 둔 표에 칸만 추가할 때
 alter table public.submissions add column if not exists offset_ms int not null default 0;
 alter table public.submissions add column if not exists gain_db real not null default 0;
+alter table public.submissions add column if not exists clean smallint not null default 0;
 create index if not exists submissions_project_idx on public.submissions (project, line_id);
 
 -- 3) 권한
