@@ -148,6 +148,9 @@ for i, l in enumerate([l for l in have if l["id"] in files], start=1):
     # 관리자 화면에서 맞춘 싱크 미세조정을 반영한다
     off = int(latest[l["id"]].get("offset_ms") or 0)
     d = max(0, int(round(l["s"] * 1000)) + off)
+    # 관리자 화면에서 맞춘 사람별 볼륨 보정
+    gdb = float(latest[l["id"]].get("gain_db") or 0)
+    gfil = f"volume={gdb:+.1f}dB," if abs(gdb) > 0.05 else ""
     # 따로 녹음한 목소리를 자연스럽게 잇기 :
     #   앞 묵음 제거 → 음량 평준화 → 양끝 짧은 페이드 → 제자리로 밀기
     filt.append(
@@ -155,6 +158,7 @@ for i, l in enumerate([l for l in have if l["id"] in files], start=1):
         f"silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.025:detection=peak,"
         f"loudnorm=I=-20:TP=-2.0:LRA=11,"
         f"afade=t=in:st=0:d=0.015,"
+        f"{gfil}"
         f"volume={VOICE_VOL},"
         f"adelay={d}|{d}[v{i}]")
     mixn.append(f"[v{i}]")
@@ -272,8 +276,10 @@ else:
         if not f: continue
         cin += ["-i", f]
         dly = int(round(n["t0"] * 1000))
+        ng = float((voices.get(n["person"]) or {}).get("gain_db") or 0)
+        ngf = f"volume={ng:+.1f}dB," if abs(ng) > 0.05 else ""
         cfil.append(f"[{ai}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
-                    f"loudnorm=I=-18:TP=-2.0:LRA=11,adelay={dly}|{dly}[n{ai}]")
+                    f"loudnorm=I=-18:TP=-2.0:LRA=11,{ngf}adelay={dly}|{dly}[n{ai}]")
         amix_in.append(f"[n{ai}]"); ai += 1
 
     c_audio = os.path.join(tmp, "credits_audio.wav")
