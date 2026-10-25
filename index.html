@@ -2052,10 +2052,18 @@ function drawAdmin(){
   /* 참가자 현황 — 누가 끝났는지 한눈에 본다 */
   {
     const h=document.createElement("div");
-    h.innerHTML=`<h2 style="font-size:16px;margin:4px 0 8px">참가자 현황</h2>`;
+    h.innerHTML=`<h2 style="font-size:16px;margin:4px 0 2px">참가자 현황</h2>
+      <p style="margin:0 0 10px;font-size:12.5px;color:var(--dim)">
+        볼륨·음질 보정은 그 코치님의 <b style="color:var(--ink)">대사 전부와 크레딧 소감에 함께</b> 적용됩니다.
+        아래 대사 표에서 <b style="color:var(--ink)">🔊</b> 로 한 줄씩 들어보며 맞추세요.<br>
+        대사마다 다르게 하고 싶으면 아래 표의 <b style="color:var(--ink)">이 대사 볼륨</b> 으로 한 줄씩 손보면 됩니다
+        (여기서 다시 바꾸면 그 코치님 전체가 덮어쓰기 되니 주의).</p>`;
     const tb=document.createElement("table");
     tb.innerHTML=`<thead><tr><th>코치</th><th>맡은 줄</th><th>올라온 줄</th>
-      <th>크레딧 소감</th><th>본인 완료 선언</th><th>볼륨 보정</th><th>음질 보정</th></tr></thead><tbody></tbody>`;
+      <th>크레딧 소감</th><th>본인 완료 선언</th>
+      <th>볼륨 보정<br><span style="font-weight:400;color:var(--dim);font-size:11px">대사 + 소감 전체</span></th>
+      <th>음질 보정<br><span style="font-weight:400;color:var(--dim);font-size:11px">대사 + 소감 전체</span></th>
+      </tr></thead><tbody></tbody>`;
     const body=tb.querySelector("tbody");
     for(const c of PROJECT.cast){
       const mine=PROJECT.lines.filter(l=>l.team===c.team&&c.chars.includes(l.char));
@@ -2082,7 +2090,8 @@ function drawAdmin(){
     h.innerHTML=`<h2 style="font-size:16px;margin:22px 0 8px">${esc(t.label)}
       <span class="mono" style="font-size:12px;color:var(--dim);font-weight:400"> ${mmss(t.start)}–${mmss(t.end)}</span></h2>`;
     const tb=document.createElement("table");
-    tb.innerHTML=`<thead><tr><th>#</th><th>시간</th><th>캐릭터</th><th>대사</th><th>맡은 사람</th><th>상태</th><th>싱크 미세조정</th></tr></thead><tbody></tbody>`;
+    tb.innerHTML=`<thead><tr><th>#</th><th>시간</th><th>캐릭터</th><th>대사</th><th>맡은 사람</th><th>상태</th><th>싱크 미세조정</th>
+      <th>이 대사 볼륨</th></tr></thead><tbody></tbody>`;
     for(const l of teamLines(tk)){
       const p=PROJECT.cast.find(c=>c.team===tk&&c.chars.includes(l.char));
       const s=subs.find(x=>x.line_id===l.id);
@@ -2094,10 +2103,10 @@ function drawAdmin(){
         <td>${p?esc(p.person):`<span style="color:var(--rec)">미배정</span>`}</td>
         <td><span class="dot ${s?"y":"n"}"></span>${s?esc(s.person):"대기"}${
           s&&scanRes[l.id]?`<span class="flag ${scanRes[l.id].kind}">${esc(scanRes[l.id].msg)}</span>`:""
-        }</td><td></td>`;
+        }${s?fixTag(s):""}</td><td></td><td></td>`;
       if(s){
-        const cell=tr.lastElementChild;
-        cell.append(mkNudge(l,s));
+        tr.children[6].append(mkNudge(l,s));
+        tr.children[7].append(mkLineGain(l,s));
       }
       tb.querySelector("tbody").append(tr);
     }
@@ -2107,16 +2116,25 @@ function drawAdmin(){
 /* 크레딧 소감 들어보기 — 볼륨 보정을 걸어서 들려준다.
    그래야 "몇 dB 올릴지" 를 바로 귀로 확인할 수 있다.
    파일을 blob 으로 받아 와서 트는 이유 : 다른 출처 파일은 Web Audio 로 못 키운다. */
+/* 보정(음질·볼륨)을 적용한 목소리 버퍼 — 미리듣기 여러 곳에서 같이 쓴다 */
+async function loadVoice(path,person,gdb){
+  const ctx=new (window.AudioContext||webkitAudioContext)();
+  if(ctx.state==="suspended")await ctx.resume().catch(()=>{});
+  let buf=await ctx.decodeAudioData(await (await fetch(pub(path))).arrayBuffer());
+  const lv=cleanOf(person);
+  if(lv) buf=await cleanBuffer(buf,lv);
+  return {ctx,buf,gain:dbToMul(gdb)};
+}
 let noteSrc=null, noteCtx=null;
 function stopNotePrev(){
   if(noteSrc){ try{noteSrc.stop()}catch(e){} try{noteSrc.disconnect()}catch(e){} noteSrc=null }
   if(noteCtx){ try{noteCtx.close()}catch(e){} noteCtx=null }
-  $$("#aCast .noteplay").forEach(x=>{x.textContent="▶ 들어보기";x.dataset.on="0"});
+  $$("#aCast .previewbtn").forEach(x=>{x.textContent=x.dataset.idle;x.dataset.on="0"});
 }
 function mkNotePlay(n){
   const b=document.createElement("button");
-  b.className="mini noteplay"; b.dataset.on="0";
-  b.textContent="▶ 들어보기";
+  b.className="mini noteplay previewbtn"; b.dataset.on="0";
+  b.dataset.idle="▶ 들어보기"; b.textContent="▶ 들어보기";
   b.title=`${(+n.dur||0).toFixed(1)}초 · 볼륨·음질 보정을 적용해서 들려줍니다`;
   b.onclick=async()=>{
     const wasOn=b.dataset.on==="1";
@@ -2139,6 +2157,73 @@ function mkNotePlay(n){
     }catch(e){
       $("#aNote").innerHTML=`소감을 재생하지 못했습니다: <b>${esc(e.message||e)}</b>`;
       b.textContent="▶ 들어보기";
+    }
+    b.disabled=false;
+  };
+  return b;
+}
+
+/* 대사 한 줄만 볼륨을 올리고 내린다.
+   소리치는 대사와 속삭이는 대사는 크기가 달라야 하므로 줄 단위로도 손볼 수 있어야 한다.
+   (참가자 현황의 볼륨은 그 코치님 전체에 한꺼번에 걸리고, 이쪽은 이 줄에만 걸린다) */
+function mkLineGain(l,s){
+  const box=document.createElement("div"); box.className="nudge";
+  const val=document.createElement("span"); val.className="nval mono";
+  const cur=()=>+(subs.find(x=>x.line_id===l.id)?.gain_db)||0;
+  const paint=()=>{const g=cur();
+    val.textContent=(g>0?"+":"")+g.toFixed(1)+"dB";
+    val.style.color=g?"var(--amber)":"var(--dim)";};
+  const save=async nv=>{
+    nv=Math.max(-12,Math.min(12,Math.round(nv*2)/2));
+    box.querySelectorAll("button").forEach(x=>x.disabled=true);
+    const {error}=await sb.from("submissions").update({gain_db:nv}).eq("id",s.id);
+    box.querySelectorAll("button").forEach(x=>x.disabled=false);
+    if(error){$("#aNote").innerHTML=`볼륨 저장 실패: <b>${esc(error.message)}</b>`;return}
+    const row=subs.find(x=>x.line_id===l.id); if(row)row.gain_db=nv;
+    paint(); stopNotePrev();
+  };
+  const b=(t,fn,title)=>{const x=document.createElement("button");
+    x.className="mini"; x.textContent=t; x.title=title||""; x.onclick=()=>fn(); return x};
+  box.append(b("◀ 1",()=>save(cur()-1),"1dB 줄이기"), val,
+             b("1 ▶",()=>save(cur()+1),"1dB 키우기"),
+             b("↺",()=>save(0),"0 으로"));
+  paint();
+  return box;
+}
+
+/* 이 줄에 지금 걸려 있는 보정을 한눈에 보여 준다 (참가자 현황에서 맞춘 값) */
+function fixTag(s){
+  const c=Math.max(0,Math.min(3,+s.clean||0));
+  if(!c)return "";
+  const parts=[];
+  if(c)parts.push("음질 "+CLEAN_NAMES[c]);
+  return `<span class="flag ok" title="참가자 현황에서 맞춘 보정이 이 대사에도 걸려 있습니다">${esc(parts.join(" · "))}</span>`;
+}
+
+/* 대사 한 줄을 '목소리만' 들려준다 — 영상·배경음악 없이.
+   음질 보정 단계를 귀로 정할 때 쓴다. */
+function mkLinePlay(l,src){
+  const b=document.createElement("button");
+  b.className="mini previewbtn"; b.dataset.on="0";
+  b.dataset.idle="🔊"; b.textContent="🔊";
+  b.title="목소리만 들어보기 (볼륨·음질 보정 적용)";
+  b.onclick=async()=>{
+    const wasOn=b.dataset.on==="1";
+    stopNotePrev();
+    if(wasOn)return;
+    b.textContent="…"; b.disabled=true;
+    try{
+      const v=await loadVoice(src.path,src.person,src.gain_db);
+      const sn=v.ctx.createBufferSource(); sn.buffer=v.buf;
+      const g=v.ctx.createGain(); g.gain.value=v.gain;
+      sn.connect(g).connect(v.ctx.destination);
+      sn.onended=()=>stopNotePrev();
+      sn.start();
+      noteSrc=sn; noteCtx=v.ctx;
+      b.dataset.on="1"; b.textContent="■";
+    }catch(e){
+      $("#aNote").innerHTML=`목소리를 재생하지 못했습니다: <b>${esc(e.message||e)}</b>`;
+      b.textContent="🔊";
     }
     b.disabled=false;
   };
@@ -2239,7 +2324,8 @@ function mkNudge(l,s){
     paint();
   };
   box.append(
-    btn("▶","영상과 같이 들어보기 (미세조정 반영)",async()=>previewLine(l,s)),
+    mkLinePlay(l,s),
+    btn("▶","영상과 같이 들어보기 (미세조정·보정 반영)",async()=>previewLine(l,s)),
     btn("◀ 50","50ms 당기기 (더 빨리)",()=>save(cur()-50)),
     val,
     btn("50 ▶","50ms 밀기 (더 늦게)",()=>save(cur()+50)),
@@ -2262,11 +2348,17 @@ async function previewLine(l,s){
   const lead=1.0;
   prevVid.muted=!!PROJECT.videoBgm;         // 배경음악 트랙이 있으면 원본 대사는 끈다
   prevVid.currentTime=Math.max(0,l.s-lead);
-  prevAudio=new Audio(pub(s.path));
+  const vo=await loadVoice(s.path,s.person,s.gain_db).catch(()=>null);
   let bedA=null;
   if(PROJECT.videoBgm){bedA=new Audio(PROJECT.videoBgm);bedA.currentTime=prevVid.currentTime;bedA.play().catch(()=>{})}
   await prevVid.play().catch(()=>{});
-  setTimeout(()=>prevAudio&&prevAudio.play().catch(()=>{}), Math.max(0,(lead+off))*1000);
+  setTimeout(()=>{
+    if(!vo)return;
+    const sn=vo.ctx.createBufferSource(); sn.buffer=vo.buf;
+    const gn=vo.ctx.createGain(); gn.gain.value=vo.gain;
+    sn.connect(gn).connect(vo.ctx.destination); sn.start();
+    prevAudio={pause:()=>{try{sn.stop()}catch(e){} try{vo.ctx.close()}catch(e){}}};
+  }, Math.max(0,(lead+off))*1000);
   const stop=()=>{if(prevVid.currentTime>=l.s+off+ (l.e-l.s) +0.8){
     prevVid.pause();bedA&&bedA.pause();clearInterval(iv)}};
   const iv=setInterval(stop,100);
