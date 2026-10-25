@@ -169,6 +169,7 @@ h1{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
   border-left:1px solid rgba(240,165,0,.45);border-right:1px solid rgba(240,165,0,.45);pointer-events:none}
 .tl .blk{z-index:2}
 .tl .blk.other{opacity:.14}
+td .nudge+.nudge{margin-top:6px}
 .tlkey{display:flex;gap:14px;flex-wrap:wrap;margin-top:7px;font-size:11.5px;color:var(--dim)}
 .tlkey span{display:flex;align-items:center;gap:5px}
 .tlkey i{width:10px;height:10px;border-radius:2px;display:inline-block}
@@ -2056,8 +2057,8 @@ function drawAdmin(){
       <p style="margin:0 0 10px;font-size:12.5px;color:var(--dim)">
         볼륨·음질 보정은 그 코치님의 <b style="color:var(--ink)">대사 전부와 크레딧 소감에 함께</b> 적용됩니다.
         아래 대사 표에서 <b style="color:var(--ink)">🔊</b> 로 한 줄씩 들어보며 맞추세요.<br>
-        대사마다 다르게 하고 싶으면 아래 표의 <b style="color:var(--ink)">이 대사 볼륨</b> 으로 한 줄씩 손보면 됩니다
-        (여기서 다시 바꾸면 그 코치님 전체가 덮어쓰기 되니 주의).</p>`;
+        대사마다 다르게 하고 싶으면 아래 표의 <b style="color:var(--ink)">이 대사만 보정</b> 으로 한 줄씩 손보면 됩니다
+        (여기서 다시 바꾸면 그 코치님 전체가 덮어쓰기 되니, <b style="color:var(--ink)">전체 먼저 → 줄별 나중</b> 순서로 하세요).</p>`;
     const tb=document.createElement("table");
     tb.innerHTML=`<thead><tr><th>코치</th><th>맡은 줄</th><th>올라온 줄</th>
       <th>크레딧 소감</th><th>본인 완료 선언</th>
@@ -2091,7 +2092,8 @@ function drawAdmin(){
       <span class="mono" style="font-size:12px;color:var(--dim);font-weight:400"> ${mmss(t.start)}–${mmss(t.end)}</span></h2>`;
     const tb=document.createElement("table");
     tb.innerHTML=`<thead><tr><th>#</th><th>시간</th><th>캐릭터</th><th>대사</th><th>맡은 사람</th><th>상태</th><th>싱크 미세조정</th>
-      <th>이 대사 볼륨</th></tr></thead><tbody></tbody>`;
+      <th>이 대사만 보정<br><span style="font-weight:400;color:var(--dim);font-size:11px">이 줄에만 적용</span></th>
+      </tr></thead><tbody></tbody>`;
     for(const l of teamLines(tk)){
       const p=PROJECT.cast.find(c=>c.team===tk&&c.chars.includes(l.char));
       const s=subs.find(x=>x.line_id===l.id);
@@ -2106,7 +2108,7 @@ function drawAdmin(){
         }${s?fixTag(s):""}</td><td></td><td></td>`;
       if(s){
         tr.children[6].append(mkNudge(l,s));
-        tr.children[7].append(mkLineGain(l,s));
+        tr.children[7].append(mkLineGain(l,s), mkLineClean(l,s));
       }
       tb.querySelector("tbody").append(tr);
     }
@@ -2191,6 +2193,43 @@ function mkLineGain(l,s){
   return box;
 }
 
+/* 대사 한 줄만 음질 보정.
+   보통은 참가자 현황에서 코치 단위로 거는 것으로 충분하지만,
+   어떤 줄만 유난히 시끄럽게 찍힌 경우에 여기서 따로 손본다. */
+function mkLineClean(l,s){
+  const box=document.createElement("div"); box.className="nudge";
+  const lab=document.createElement("span"); lab.className="synclab"; lab.textContent="음질";
+  const val=document.createElement("span"); val.className="nval mono";
+  const cur=()=>Math.max(0,Math.min(3,+(subs.find(x=>x.line_id===l.id)?.clean)||0));
+  const paint=()=>{const v=cur();
+    val.textContent=CLEAN_NAMES[v];
+    val.style.color=v?"var(--amber)":"var(--dim)";};
+  const save=async nv=>{
+    box.querySelectorAll("button").forEach(x=>x.disabled=true);
+    const {error}=await sb.from("submissions").update({clean:nv}).eq("id",s.id);
+    box.querySelectorAll("button").forEach(x=>x.disabled=false);
+    if(error){$("#aNote").innerHTML=`음질 보정 저장 실패: <b>${esc(error.message)}</b>`;return}
+    const row=subs.find(x=>x.line_id===l.id); if(row)row.clean=nv;
+    paint(); stopNotePrev(); drawCuesFlagOnly(l.id);
+  };
+  const b=(t,fn,title)=>{const x=document.createElement("button");
+    x.className="mini"; x.textContent=t; x.title=title||""; x.onclick=()=>fn(); return x};
+  box.append(lab, b("◀",()=>save(Math.max(0,cur()-1)),"한 단계 약하게"), val,
+                  b("▶",()=>save(Math.min(3,cur()+1)),"한 단계 강하게"));
+  paint();
+  return box;
+}
+/* 상태 칸의 보정 표시만 다시 그린다 */
+function drawCuesFlagOnly(id){
+  const s=subs.find(x=>x.line_id===id); if(!s)return;
+  const tr=[...document.querySelectorAll("#aCast table tbody tr")]
+    .find(r=>r.children.length>7 && r.children[0]?.textContent.trim()===String(id));
+  if(!tr)return;
+  const old=tr.children[5].querySelector(".flag.ok"); if(old)old.remove();
+  const html=fixTag(s);
+  if(html)tr.children[5].insertAdjacentHTML("beforeend",html);
+}
+
 /* 이 줄에 지금 걸려 있는 보정을 한눈에 보여 준다 (참가자 현황에서 맞춘 값) */
 function fixTag(s){
   const c=Math.max(0,Math.min(3,+s.clean||0));
@@ -2205,8 +2244,8 @@ function fixTag(s){
 function mkLinePlay(l,src){
   const b=document.createElement("button");
   b.className="mini previewbtn"; b.dataset.on="0";
-  b.dataset.idle="🔊"; b.textContent="🔊";
-  b.title="목소리만 들어보기 (볼륨·음질 보정 적용)";
+  b.dataset.idle="🔊 목소리만"; b.textContent="🔊 목소리만";
+  b.title="영상·배경음악 없이 이 코치님 목소리만 — 음질·볼륨을 판단할 때";
   b.onclick=async()=>{
     const wasOn=b.dataset.on==="1";
     stopNotePrev();
@@ -2316,19 +2355,23 @@ function mkNudge(l,s){
       box.querySelectorAll("button").forEach(x=>x.disabled=false);
     };
     return b;};
+  /* 조절하면 곧바로 들려준다 — 연달아 누를 때는 마지막 한 번만 (0.45초 기다렸다가) */
+  let prevTimer=0;
   const save=async nv=>{
     nv=Math.max(-3000,Math.min(3000,Math.round(nv)));
     const {error}=await sb.from("submissions").update({offset_ms:nv}).eq("id",s.id);
     if(error){$("#aNote").innerHTML=`미세조정 저장 실패: <b>${esc(error.message)}</b>`;return}
     const row=subs.find(x=>x.line_id===l.id); if(row)row.offset_ms=nv;
     paint();
+    if(prevTimer)clearTimeout(prevTimer);
+    prevTimer=setTimeout(()=>{prevTimer=0; previewLine(l,s)},450);
   };
   box.append(
     mkLinePlay(l,s),
-    btn("▶","영상과 같이 들어보기 (미세조정·보정 반영)",async()=>previewLine(l,s)),
-    btn("◀ 50","50ms 당기기 (더 빨리)",()=>save(cur()-50)),
+    btn("▶ 영상과","영상·배경음악과 같이 — 싱크(입 맞춤)를 볼 때",async()=>previewLine(l,s)),
+    btn("◀ 50","50ms 당기기 (더 빨리) — 바로 들려줍니다",()=>save(cur()-50)),
     val,
-    btn("50 ▶","50ms 밀기 (더 늦게)",()=>save(cur()+50)),
+    btn("50 ▶","50ms 밀기 (더 늦게) — 바로 들려줍니다",()=>save(cur()+50)),
     btn("↺","0 으로 되돌리기",()=>save(0)),
   );
   paint();
@@ -2336,7 +2379,9 @@ function mkNudge(l,s){
 }
 /* 그 대사만 영상과 함께 들어보기 — 미세조정이 어떻게 들리는지 바로 확인 */
 let prevAudio=null, prevVid=null;
+let prevToken=0;
 async function previewLine(l,s){
+  const my=++prevToken;                       // 늦게 시작한 쪽만 살아남는다
   if(prevAudio){prevAudio.pause();prevAudio=null}
   if(!prevVid){
     prevVid=document.createElement("video");
@@ -2349,11 +2394,12 @@ async function previewLine(l,s){
   prevVid.muted=!!PROJECT.videoBgm;         // 배경음악 트랙이 있으면 원본 대사는 끈다
   prevVid.currentTime=Math.max(0,l.s-lead);
   const vo=await loadVoice(s.path,s.person,s.gain_db).catch(()=>null);
+  if(my!==prevToken){ try{vo&&vo.ctx.close()}catch(e){} return }   // 그새 다른 줄을 눌렀다
   let bedA=null;
   if(PROJECT.videoBgm){bedA=new Audio(PROJECT.videoBgm);bedA.currentTime=prevVid.currentTime;bedA.play().catch(()=>{})}
   await prevVid.play().catch(()=>{});
   setTimeout(()=>{
-    if(!vo)return;
+    if(!vo||my!==prevToken)return;
     const sn=vo.ctx.createBufferSource(); sn.buffer=vo.buf;
     const gn=vo.ctx.createGain(); gn.gain.value=vo.gain;
     sn.connect(gn).connect(vo.ctx.destination); sn.start();
