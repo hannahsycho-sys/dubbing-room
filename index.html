@@ -170,6 +170,26 @@ h1{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
 .tl .blk{z-index:2}
 .tl .blk.other{opacity:.14}
 td .nudge+.nudge{margin-top:6px}
+.fixsum{display:inline-block;font-family:"Courier Prime",monospace;font-size:11.5px;
+  color:var(--amber);margin-right:9px;white-space:nowrap}
+.fixsum:empty{display:none}
+tr.editrow>td{background:var(--panel2);border-top:0;padding:14px 16px 16px}
+.wavebox{position:relative;border:1px solid var(--line);border-radius:6px;background:#0c0c0a;
+  overflow:hidden;touch-action:none;user-select:none}
+.wavebox canvas{display:block;width:100%;height:120px}
+.wavebox .cut{position:absolute;top:0;bottom:0;background:rgba(8,8,6,.74);pointer-events:none}
+.wavebox .trimh{position:absolute;top:0;bottom:0;width:14px;margin-left:-7px;cursor:ew-resize;
+  display:flex;align-items:center;justify-content:center}
+.wavebox .trimh::before{content:"";width:3px;height:100%;background:var(--amber);
+  box-shadow:0 0 0 1px rgba(0,0,0,.6)}
+.wavebox .trimh span{position:absolute;top:4px;font-size:10px;color:#17150d;background:var(--amber);
+  border-radius:3px;padding:1px 4px;font-family:"Courier Prime",monospace}
+.edgrid{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start}
+@media(max-width:900px){.edgrid{grid-template-columns:1fr}}
+.edvid{width:100%;aspect-ratio:16/9;background:#000;border-radius:6px;display:block;
+  border:1px solid var(--line)}
+.edrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px}
+.edrow .lab{font-size:12px;color:var(--dim);min-width:34px}
 .tlkey{display:flex;gap:14px;flex-wrap:wrap;margin-top:7px;font-size:11.5px;color:var(--dim)}
 .tlkey span{display:flex;align-items:center;gap:5px}
 .tlkey i{width:10px;height:10px;border-radius:2px;display:inline-block}
@@ -2091,9 +2111,7 @@ function drawAdmin(){
     h.innerHTML=`<h2 style="font-size:16px;margin:22px 0 8px">${esc(t.label)}
       <span class="mono" style="font-size:12px;color:var(--dim);font-weight:400"> ${mmss(t.start)}–${mmss(t.end)}</span></h2>`;
     const tb=document.createElement("table");
-    tb.innerHTML=`<thead><tr><th>#</th><th>시간</th><th>캐릭터</th><th>대사</th><th>맡은 사람</th><th>상태</th><th>싱크 미세조정</th>
-      <th>이 대사만 보정<br><span style="font-weight:400;color:var(--dim);font-size:11px">이 줄에만 적용</span></th>
-      </tr></thead><tbody></tbody>`;
+    tb.innerHTML=`<thead><tr><th>#</th><th>시간</th><th>캐릭터</th><th>대사</th><th>맡은 사람</th><th>상태</th><th>손보기</th></tr></thead><tbody></tbody>`;
     for(const l of teamLines(tk)){
       const p=PROJECT.cast.find(c=>c.team===tk&&c.chars.includes(l.char));
       const s=subs.find(x=>x.line_id===l.id);
@@ -2105,10 +2123,16 @@ function drawAdmin(){
         <td>${p?esc(p.person):`<span style="color:var(--rec)">미배정</span>`}</td>
         <td><span class="dot ${s?"y":"n"}"></span>${s?esc(s.person):"대기"}${
           s&&scanRes[l.id]?`<span class="flag ${scanRes[l.id].kind}">${esc(scanRes[l.id].msg)}</span>`:""
-        }${s?fixTag(s):""}</td><td></td><td></td>`;
+        }</td><td></td>`;
       if(s){
-        tr.children[6].append(mkNudge(l,s));
-        tr.children[7].append(mkLineGain(l,s), mkLineClean(l,s));
+        const cell=tr.children[6];
+        const sum=document.createElement("span"); sum.className="fixsum";
+        paintSum(sum,l.id);
+        const ed=document.createElement("button");
+        ed.className="mini"; ed.textContent="✎ 편집";
+        ed.title="파형을 보면서 자르기·싱크·볼륨·음질을 손봅니다";
+        ed.onclick=()=>toggleEditor(tr,l,s,sum);
+        cell.append(sum, ed);
       }
       tb.querySelector("tbody").append(tr);
     }
@@ -2118,12 +2142,27 @@ function drawAdmin(){
 /* 크레딧 소감 들어보기 — 볼륨 보정을 걸어서 들려준다.
    그래야 "몇 dB 올릴지" 를 바로 귀로 확인할 수 있다.
    파일을 blob 으로 받아 와서 트는 이유 : 다른 출처 파일은 Web Audio 로 못 키운다. */
+/* 앞뒤를 잘라낸 버퍼를 만든다 (원본 파일은 그대로 둔다) */
+function trimBuffer(buf,ts,te){
+  ts=Math.max(0,+ts||0); te=Math.max(0,+te||0);
+  if(ts<0.001&&te<0.001)return buf;
+  const sr=buf.sampleRate;
+  const a=Math.min(buf.length-1,Math.floor(ts*sr));
+  const b=Math.max(a+1,buf.length-Math.floor(te*sr));
+  const n=b-a;
+  const out=new AudioBuffer({length:n,numberOfChannels:buf.numberOfChannels,sampleRate:sr});
+  for(let ch=0;ch<buf.numberOfChannels;ch++)
+    out.copyToChannel(buf.getChannelData(ch).subarray(a,b),ch);
+  return out;
+}
+
 /* 보정(음질·볼륨)을 적용한 목소리 버퍼 — 미리듣기 여러 곳에서 같이 쓴다 */
-async function loadVoice(path,person,gdb){
+async function loadVoice(path,person,gdb,row){
   const ctx=new (window.AudioContext||webkitAudioContext)();
   if(ctx.state==="suspended")await ctx.resume().catch(()=>{});
   let buf=await ctx.decodeAudioData(await (await fetch(pub(path))).arrayBuffer());
-  const lv=cleanOf(person);
+  if(row){ buf=trimBuffer(buf,row.trim_s,row.trim_e); }
+  const lv=row?Math.max(0,Math.min(3,+row.clean||0)):cleanOf(person);
   if(lv) buf=await cleanBuffer(buf,lv);
   return {ctx,buf,gain:dbToMul(gdb)};
 }
@@ -2168,7 +2207,7 @@ function mkNotePlay(n){
 /* 대사 한 줄만 볼륨을 올리고 내린다.
    소리치는 대사와 속삭이는 대사는 크기가 달라야 하므로 줄 단위로도 손볼 수 있어야 한다.
    (참가자 현황의 볼륨은 그 코치님 전체에 한꺼번에 걸리고, 이쪽은 이 줄에만 걸린다) */
-function mkLineGain(l,s){
+function mkLineGain(l,s,after){
   const box=document.createElement("div"); box.className="nudge";
   const val=document.createElement("span"); val.className="nval mono";
   const cur=()=>+(subs.find(x=>x.line_id===l.id)?.gain_db)||0;
@@ -2182,7 +2221,7 @@ function mkLineGain(l,s){
     box.querySelectorAll("button").forEach(x=>x.disabled=false);
     if(error){$("#aNote").innerHTML=`볼륨 저장 실패: <b>${esc(error.message)}</b>`;return}
     const row=subs.find(x=>x.line_id===l.id); if(row)row.gain_db=nv;
-    paint(); stopNotePrev();
+    paint(); after&&after(); stopNotePrev();
   };
   const b=(t,fn,title)=>{const x=document.createElement("button");
     x.className="mini"; x.textContent=t; x.title=title||""; x.onclick=()=>fn(); return x};
@@ -2193,10 +2232,156 @@ function mkLineGain(l,s){
   return box;
 }
 
+/* 파형을 보면서 손보는 편집 패널.
+   표에는 '요약 + ✎ 편집' 만 두고, 실제 조절은 전부 여기로 모았다 —
+   칸을 계속 늘리면 표가 읽기 어려워지기 때문이다. */
+function toggleEditor(tr,l,s,sumEl){
+  const open=tr.nextElementSibling;
+  const shut=el=>{ el.querySelectorAll("video").forEach(v=>{try{v.pause()}catch(e){}}); el.remove() };
+  if(open&&open.classList.contains("editrow")){ shut(open); prevVid=null; stopNotePrev(); return }
+  $$("#aCast .editrow").forEach(shut); prevVid=null; stopNotePrev();
+  const row=document.createElement("tr"); row.className="editrow";
+  const td=document.createElement("td"); td.colSpan=tr.children.length;
+  td.innerHTML=`<div style="color:var(--dim);font-size:12.5px">파형을 불러오는 중…</div>`;
+  row.append(td); tr.after(row);
+  buildEditor(td,l,s,sumEl).catch(e=>{
+    td.innerHTML=`<div style="color:var(--rec)">파형을 불러오지 못했습니다: ${esc(e.message||e)}</div>`;
+  });
+}
+
+async function buildEditor(td,l,s,sumEl){
+  const ctx=new (window.AudioContext||webkitAudioContext)();
+  const raw=await ctx.decodeAudioData(await (await fetch(pub(s.path))).arrayBuffer());
+  const dur=raw.duration;
+  try{ctx.close()}catch(e){}
+
+  td.innerHTML="";
+  const grid=document.createElement("div"); grid.className="edgrid";
+  const left=document.createElement("div");
+  const right=document.createElement("div");
+  grid.append(left,right); td.append(grid);
+
+  /* 장면을 보면서 자르고 맞출 수 있게 영상을 옆에 둔다 */
+  const vid2=document.createElement("video");
+  vid2.playsInline=true; vid2.preload="auto"; vid2.className="edvid";
+  vid2.src=PROJECT.video;
+  vid2.muted=!!PROJECT.videoBgm;          // 배경음악 트랙이 있으면 원본 대사는 끈다
+  left.append(vid2);
+  const vinfo=document.createElement("div");
+  vinfo.style.cssText="font-size:11.5px;color:var(--dim);margin-top:6px";
+  vinfo.textContent=`${tc(l.s)} – ${tc(l.e)} · ${l.char}`;
+  left.append(vinfo);
+  vid2.addEventListener("loadedmetadata",()=>{ try{vid2.currentTime=Math.max(0,l.s)}catch(e){} },{once:true});
+
+  const box=document.createElement("div"); box.className="wavebox";
+  const cv=document.createElement("canvas");
+  const cutL=document.createElement("div"); cutL.className="cut";
+  const cutR=document.createElement("div"); cutR.className="cut";
+  const hL=document.createElement("div"); hL.className="trimh"; hL.innerHTML="<span>앞</span>";
+  const hR=document.createElement("div"); hR.className="trimh"; hR.innerHTML="<span>뒤</span>";
+  box.append(cv,cutL,cutR,hL,hR); right.append(box);
+
+  const cur=()=>subs.find(x=>x.line_id===l.id)||s;
+  let ts=+cur().trim_s||0, te=+cur().trim_e||0;
+
+  const drawWave=()=>{
+    const w=cv.clientWidth||800, h=120;
+    cv.width=w*devicePixelRatio; cv.height=h*devicePixelRatio;
+    const g=cv.getContext("2d"); g.scale(devicePixelRatio,devicePixelRatio);
+    g.clearRect(0,0,w,h);
+    const d=raw.getChannelData(0), step=Math.max(1,Math.floor(d.length/w));
+    g.fillStyle="#f0a500";
+    for(let x=0;x<w;x++){
+      let pk=0; const a=x*step, b=Math.min(d.length,a+step);
+      for(let i=a;i<b;i+=2){const v=Math.abs(d[i]); if(v>pk)pk=v}
+      const hh=Math.max(1,pk*(h*0.46));
+      g.fillRect(x,h/2-hh,1,hh*2);
+    }
+    g.strokeStyle="rgba(255,255,255,.14)"; g.beginPath();
+    g.moveTo(0,h/2); g.lineTo(w,h/2); g.stroke();
+  };
+  const place=()=>{
+    const w=box.clientWidth||1;
+    const xl=Math.round(ts/dur*w), xr=Math.round((1-te/dur)*w);
+    cutL.style.left="0"; cutL.style.width=xl+"px";
+    cutR.style.left=xr+"px"; cutR.style.right="0";
+    hL.style.left=xl+"px"; hR.style.left=xr+"px";
+    hL.querySelector("span").textContent=ts>0.004?ts.toFixed(2)+"s":"앞";
+    hR.querySelector("span").textContent=te>0.004?te.toFixed(2)+"s":"뒤";
+    const left=dur-ts-te;
+    info.textContent=`원본 ${dur.toFixed(2)}초 · 남는 길이 ${Math.max(0,left).toFixed(2)}초`;
+  };
+  const save=async()=>{
+    const {error}=await sb.from("submissions").update({trim_s:+ts.toFixed(3),trim_e:+te.toFixed(3)}).eq("id",s.id);
+    if(error){$("#aNote").innerHTML=`자르기 저장 실패: <b>${esc(error.message)}</b>`;return}
+    const row=subs.find(x=>x.line_id===l.id);
+    if(row){row.trim_s=+ts.toFixed(3); row.trim_e=+te.toFixed(3)}
+    paintSum(sumEl,l.id); stopNotePrev();
+  };
+  const drag=(h,isLeft)=>{
+    h.addEventListener("pointerdown",e=>{
+      h.setPointerCapture(e.pointerId);
+      const move=ev=>{
+        const r=box.getBoundingClientRect();
+        let t=Math.max(0,Math.min(dur,(ev.clientX-r.left)/r.width*dur));
+        if(isLeft) ts=Math.min(t,dur-te-0.05);
+        else       te=Math.min(dur-t,dur-ts-0.05);
+        ts=Math.max(0,ts); te=Math.max(0,te);
+        place();
+      };
+      const up=ev=>{
+        h.removeEventListener("pointermove",move);
+        h.removeEventListener("pointerup",up);
+        try{h.releasePointerCapture(e.pointerId)}catch(_){}
+        save();
+      };
+      h.addEventListener("pointermove",move);
+      h.addEventListener("pointerup",up);
+    });
+  };
+  drag(hL,true); drag(hR,false);
+
+  const info=document.createElement("div");
+  info.style.cssText="font-size:12px;color:var(--dim);margin-top:7px";
+  right.append(info);
+
+  const after=()=>paintSum(sumEl,l.id);
+  const r1=document.createElement("div"); r1.className="edrow";
+  r1.append(mkLinePlay(l,s), (()=>{const b=document.createElement("button");
+    b.className="mini"; b.textContent="▶ 영상과"; b.title="영상·배경음악과 같이 — 싱크 확인";
+    b.onclick=()=>previewLine(l,s,vid2); return b})());
+  const reset=document.createElement("button");
+  reset.className="mini"; reset.textContent="↺ 자르기 취소";
+  reset.onclick=()=>{ts=0;te=0;place();save()};
+  r1.append(reset);
+
+  const r2=document.createElement("div"); r2.className="edrow";
+  const lab=t=>{const x=document.createElement("span");x.className="lab";x.textContent=t;return x};
+  r2.append(lab("싱크"), mkNudge(l,s,after));
+  const r3=document.createElement("div"); r3.className="edrow";
+  r3.append(lab("볼륨"), mkLineGain(l,s,after), lab("음질"), mkLineClean(l,s,after));
+  right.append(r1,r2,r3);
+
+  drawWave(); place();
+  new ResizeObserver(()=>{drawWave();place()}).observe(box);
+}
+
+/* 이 줄에 지금 걸려 있는 손질을 한 줄로 요약해 표에 보여 준다 */
+function paintSum(el,id){
+  const s=subs.find(x=>x.line_id===id); if(!s){el.textContent="";return}
+  const p=[];
+  const o=+s.offset_ms||0;        if(o) p.push((o>0?"+":"")+(o/1000).toFixed(2)+"s");
+  const g=+s.gain_db||0;          if(g) p.push((g>0?"+":"")+g.toFixed(1)+"dB");
+  const c=+s.clean||0;            if(c) p.push(CLEAN_NAMES[c]);
+  const ts=+s.trim_s||0, te=+s.trim_e||0;
+  if(ts||te) p.push(`잘라냄 ${ts?ts.toFixed(2)+"s":""}${ts&&te?"/":""}${te?te.toFixed(2)+"s":""}`);
+  el.textContent=p.join(" · ");
+}
+
 /* 대사 한 줄만 음질 보정.
    보통은 참가자 현황에서 코치 단위로 거는 것으로 충분하지만,
    어떤 줄만 유난히 시끄럽게 찍힌 경우에 여기서 따로 손본다. */
-function mkLineClean(l,s){
+function mkLineClean(l,s,after){
   const box=document.createElement("div"); box.className="nudge";
   const lab=document.createElement("span"); lab.className="synclab"; lab.textContent="음질";
   const val=document.createElement("span"); val.className="nval mono";
@@ -2210,7 +2395,7 @@ function mkLineClean(l,s){
     box.querySelectorAll("button").forEach(x=>x.disabled=false);
     if(error){$("#aNote").innerHTML=`음질 보정 저장 실패: <b>${esc(error.message)}</b>`;return}
     const row=subs.find(x=>x.line_id===l.id); if(row)row.clean=nv;
-    paint(); stopNotePrev(); drawCuesFlagOnly(l.id);
+    paint(); after&&after(); stopNotePrev();
   };
   const b=(t,fn,title)=>{const x=document.createElement("button");
     x.className="mini"; x.textContent=t; x.title=title||""; x.onclick=()=>fn(); return x};
@@ -2219,17 +2404,6 @@ function mkLineClean(l,s){
   paint();
   return box;
 }
-/* 상태 칸의 보정 표시만 다시 그린다 */
-function drawCuesFlagOnly(id){
-  const s=subs.find(x=>x.line_id===id); if(!s)return;
-  const tr=[...document.querySelectorAll("#aCast table tbody tr")]
-    .find(r=>r.children.length>7 && r.children[0]?.textContent.trim()===String(id));
-  if(!tr)return;
-  const old=tr.children[5].querySelector(".flag.ok"); if(old)old.remove();
-  const html=fixTag(s);
-  if(html)tr.children[5].insertAdjacentHTML("beforeend",html);
-}
-
 /* 이 줄에 지금 걸려 있는 보정을 한눈에 보여 준다 (참가자 현황에서 맞춘 값) */
 function fixTag(s){
   const c=Math.max(0,Math.min(3,+s.clean||0));
@@ -2252,7 +2426,7 @@ function mkLinePlay(l,src){
     if(wasOn)return;
     b.textContent="…"; b.disabled=true;
     try{
-      const v=await loadVoice(src.path,src.person,src.gain_db);
+      const v=await loadVoice(src.path,src.person,src.gain_db,src);
       const sn=v.ctx.createBufferSource(); sn.buffer=v.buf;
       const g=v.ctx.createGain(); g.gain.value=v.gain;
       sn.connect(g).connect(v.ctx.destination);
@@ -2339,7 +2513,7 @@ function mkGain(person){
 
 /* 싱크 미세조정 — 녹음이 조금 빠르거나 늦으면 밀고 당긴다.
    원본 녹음은 건드리지 않고 '몇 ms 옮길지' 만 저장한다. */
-function mkNudge(l,s){
+function mkNudge(l,s,after){
   const box=document.createElement("div"); box.className="nudge";
   const cur=()=>(subs.find(x=>x.line_id===l.id)?.offset_ms)||0;
   const val=document.createElement("span"); val.className="nval mono";
@@ -2362,13 +2536,11 @@ function mkNudge(l,s){
     const {error}=await sb.from("submissions").update({offset_ms:nv}).eq("id",s.id);
     if(error){$("#aNote").innerHTML=`미세조정 저장 실패: <b>${esc(error.message)}</b>`;return}
     const row=subs.find(x=>x.line_id===l.id); if(row)row.offset_ms=nv;
-    paint();
+    paint(); after&&after();
     if(prevTimer)clearTimeout(prevTimer);
     prevTimer=setTimeout(()=>{prevTimer=0; previewLine(l,s)},450);
   };
   box.append(
-    mkLinePlay(l,s),
-    btn("▶ 영상과","영상·배경음악과 같이 — 싱크(입 맞춤)를 볼 때",async()=>previewLine(l,s)),
     btn("◀ 50","50ms 당기기 (더 빨리) — 바로 들려줍니다",()=>save(cur()-50)),
     val,
     btn("50 ▶","50ms 밀기 (더 늦게) — 바로 들려줍니다",()=>save(cur()+50)),
@@ -2380,10 +2552,11 @@ function mkNudge(l,s){
 /* 그 대사만 영상과 함께 들어보기 — 미세조정이 어떻게 들리는지 바로 확인 */
 let prevAudio=null, prevVid=null;
 let prevToken=0;
-async function previewLine(l,s){
+async function previewLine(l,s,useVid){
   const my=++prevToken;                       // 늦게 시작한 쪽만 살아남는다
   if(prevAudio){prevAudio.pause();prevAudio=null}
-  if(!prevVid){
+  if(useVid){ prevVid=useVid; }
+  else if(!prevVid){
     prevVid=document.createElement("video");
     prevVid.style.cssText="width:100%;max-width:560px;border-radius:6px;margin-top:14px;display:block";
     prevVid.playsInline=true; prevVid.src=PROJECT.video;
@@ -2393,7 +2566,7 @@ async function previewLine(l,s){
   const lead=1.0;
   prevVid.muted=!!PROJECT.videoBgm;         // 배경음악 트랙이 있으면 원본 대사는 끈다
   prevVid.currentTime=Math.max(0,l.s-lead);
-  const vo=await loadVoice(s.path,s.person,s.gain_db).catch(()=>null);
+  const vo=await loadVoice(s.path,s.person,s.gain_db,subs.find(x=>x.line_id===l.id)).catch(()=>null);
   if(my!==prevToken){ try{vo&&vo.ctx.close()}catch(e){} return }   // 그새 다른 줄을 눌렀다
   let bedA=null;
   if(PROJECT.videoBgm){bedA=new Audio(PROJECT.videoBgm);bedA.currentTime=prevVid.currentTime;bedA.play().catch(()=>{})}
@@ -2549,6 +2722,7 @@ async function mix(){
     const off=(s.offset_ms||0)/1000;                 // 선생님이 맞춘 미세조정
     try{
       let bf=await load(pub(s.path));
+      bf=trimBuffer(bf,s.trim_s,s.trim_e);
       const lv=Math.max(0,Math.min(3,+s.clean||0));
       if(lv) bf=await cleanBuffer(bf,lv);
       voices.push({at:Math.max(0,l.s+off),buf:bf,vg:dbToMul(s.gain_db)});

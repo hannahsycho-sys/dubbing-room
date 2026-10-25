@@ -79,6 +79,8 @@ def fetch_notes(key):
         out[r["person"]] = {"dur": float(r.get("dur") or 0),
                             "gain_db": float(r.get("gain_db") or 0),
                             "clean": int(r.get("clean") or 0),
+                            "trim_s": float(r.get("trim_s") or 0),
+                            "trim_e": float(r.get("trim_e") or 0),
                             "url": f"{url}/storage/v1/object/public/{bucket}/{r['path']}"}
     print(f"  소감 {len(out)}개 받음")
     return out

@@ -134,6 +134,21 @@ CLEAN_CHAIN = {
     2: "highpass=f=80,afftdn=nr=14:nf=-32,equalizer=f=3000:t=q:w=1.4:g=2,",
     3: "highpass=f=85,afftdn=nr=20:nf=-36,equalizer=f=3000:t=q:w=1.4:g=2.5,deesser,",
 }
+def trim_of(row):
+    """앞/뒤로 잘라낼 만큼을 ffmpeg atrim 으로 바꾼다. 없으면 빈 문자열."""
+    try:
+        ts = max(0.0, float(row.get("trim_s") or 0))
+        te = max(0.0, float(row.get("trim_e") or 0))
+        dur = float(row.get("dur") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if ts <= 0.001 and te <= 0.001:
+        return ""
+    end = (dur - te) if dur > 0 else 0
+    f = f"atrim=start={ts:.3f}" + (f":end={end:.3f}" if end > ts else "")
+    return f + ",asetpts=PTS-STARTPTS,"
+
+
 def clean_of(row):
     try: return CLEAN_CHAIN.get(int(row.get("clean") or 0), "")
     except (TypeError, ValueError): return ""
@@ -166,10 +181,12 @@ for i, l in enumerate([l for l in have if l["id"] in files], start=1):
     gdb = float(latest[l["id"]].get("gain_db") or 0)
     gfil = f"volume={gdb:+.1f}dB," if abs(gdb) > 0.05 else ""
     cfil_ = clean_of(latest[l["id"]])
+    tfil_ = trim_of(latest[l["id"]])
     # 따로 녹음한 목소리를 자연스럽게 잇기 :
     #   앞 묵음 제거 → 음량 평준화 → 양끝 짧은 페이드 → 제자리로 밀기
     filt.append(
         f"[{i}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
+        f"{tfil_}"
         f"silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.025:detection=peak,"
         f"{cfil_}"
         f"loudnorm=I=-20:TP=-2.0:LRA=11,"
@@ -296,8 +313,9 @@ else:
         ng = float(nv_.get("gain_db") or 0)
         ngf = f"volume={ng:+.1f}dB," if abs(ng) > 0.05 else ""
         ncl = clean_of(nv_)
+        ntr = trim_of(dict(nv_, dur=n.get("dur") or nv_.get("dur") or 0))
         cfil.append(f"[{ai}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
-                    f"{ncl}loudnorm=I=-18:TP=-2.0:LRA=11,{ngf}adelay={dly}|{dly}[n{ai}]")
+                    f"{ntr}{ncl}loudnorm=I=-18:TP=-2.0:LRA=11,{ngf}adelay={dly}|{dly}[n{ai}]")
         amix_in.append(f"[n{ai}]"); ai += 1
 
     c_audio = os.path.join(tmp, "credits_audio.wav")
