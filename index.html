@@ -1778,7 +1778,23 @@ async function delTake(l,i){
   }else say(`${i+1}번 테이크를 지웠습니다. (${t.list.length}개 남음)`);
 }
 async function wipe(l,quiet){
-  if(!quiet&&!confirm(`${l.char} — "${l.text.slice(0,40)}…"\n\n이 대사의 녹음을 ${tkList(l.id).length}개 모두 지울까요?`))return;
+  /* 확인 문구는 '실제로 지워지는 것' 을 그대로 말해야 한다.
+     이 기기에 테이크가 없어도 서버에 올라간 녹음은 지워진다 —
+     예전에는 "0개 지울까요?" 라고 떠서 아무 일도 안 일어날 것처럼 보였다. */
+  const n=tkList(l.id).length;
+  const srv=subs.find(x=>x.line_id===l.id);
+  if(!quiet){
+    const head=`${l.char} — "${l.text.slice(0,40)}…"\n\n`;
+    let msg;
+    if(n) msg=head+`이 기기에 녹음한 ${n}개를 지웁니다.`
+              +(srv?`\n올라간 제출본도 함께 지워집니다.`:"")
+              +`\n\n지울까요?`;
+    else if(srv) msg=head+`이 기기에는 녹음이 없습니다.\n`
+              +`서버에 올라간 ${srv.person} 님의 녹음을 지웁니다.\n\n`
+              +`되돌릴 수 없습니다. 정말 지울까요?`;
+    else return;
+    if(!confirm(msg))return;
+  }
   delete takes[l.id]; await tDel(kOf(l.id));
   const s=subs.find(x=>x.line_id===l.id);
   if(s&&online){
