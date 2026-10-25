@@ -2320,7 +2320,9 @@ async function buildEditor(td,l,s,sumEl){
   };
   const drag=(h,isLeft)=>{
     h.addEventListener("pointerdown",e=>{
-      h.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      /* 포인터 캡처가 실패해도 끌기는 계속되어야 한다 */
+      try{h.setPointerCapture(e.pointerId)}catch(_){}
       const move=ev=>{
         const r=box.getBoundingClientRect();
         let t=Math.max(0,Math.min(dur,(ev.clientX-r.left)/r.width*dur));
