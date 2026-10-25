@@ -2157,14 +2157,24 @@ function trimBuffer(buf,ts,te){
 }
 
 /* 보정(음질·볼륨)을 적용한 목소리 버퍼 — 미리듣기 여러 곳에서 같이 쓴다 */
+/* 들을 때마다 '지금 저장된 값' 을 다시 찾아서 적용한다.
+   패널을 열 때 잡아둔 객체를 그대로 쓰면, 그 사이 목록이 새로 받아와졌을 때
+   옛날 값(자르기 0 등)으로 들려 "바꿨는데 똑같다" 가 된다. */
+function rowNow(id,fallback){
+  return subs.find(x=>x.line_id===id) || notes.find(x=>x.line_id===id) || fallback;
+}
 async function loadVoice(path,person,gdb,row){
   const ctx=new (window.AudioContext||webkitAudioContext)();
   if(ctx.state==="suspended")await ctx.resume().catch(()=>{});
   let buf=await ctx.decodeAudioData(await (await fetch(pub(path))).arrayBuffer());
-  if(row){ buf=trimBuffer(buf,row.trim_s,row.trim_e); }
+  let g=+gdb||0;
+  if(row){
+    buf=trimBuffer(buf,row.trim_s,row.trim_e);
+    g=+row.gain_db||0;
+  }
   const lv=row?Math.max(0,Math.min(3,+row.clean||0)):cleanOf(person);
   if(lv) buf=await cleanBuffer(buf,lv);
-  return {ctx,buf,gain:dbToMul(gdb)};
+  return {ctx,buf,gain:dbToMul(g)};
 }
 let noteSrc=null, noteCtx=null;
 function stopNotePrev(){
@@ -2183,13 +2193,15 @@ function mkNotePlay(n){
     if(wasOn)return;                       // 누르던 것을 다시 누르면 멈춤
     b.textContent="준비 중…"; b.disabled=true;
     try{
-      const ab=await (await fetch(pub(n.path))).arrayBuffer();
+      const cur=notes.find(x=>x.person===n.person)||n;
+      const ab=await (await fetch(pub(cur.path))).arrayBuffer();
       const ctx=new (window.AudioContext||webkitAudioContext)();
       let buf=await ctx.decodeAudioData(ab);
-      const lv=cleanOf(n.person);
+      buf=trimBuffer(buf,cur.trim_s,cur.trim_e);
+      const lv=Math.max(0,Math.min(3,+cur.clean||0));
       if(lv) buf=await cleanBuffer(buf,lv);
       const src=ctx.createBufferSource(); src.buffer=buf;
-      const g=ctx.createGain(); g.gain.value=dbToMul(n.gain_db);
+      const g=ctx.createGain(); g.gain.value=dbToMul(cur.gain_db);
       src.connect(g).connect(ctx.destination);
       src.onended=()=>stopNotePrev();
       src.start();
@@ -2306,8 +2318,11 @@ async function buildEditor(td,l,s,sumEl){
     cutL.style.left="0"; cutL.style.width=xl+"px";
     cutR.style.left=xr+"px"; cutR.style.right="0";
     hL.style.left=xl+"px"; hR.style.left=xr+"px";
-    hL.querySelector("span").textContent=ts>0.004?ts.toFixed(2)+"s":"앞";
-    hR.querySelector("span").textContent=te>0.004?te.toFixed(2)+"s":"뒤";
+    const sl=hL.querySelector("span"), sr=hR.querySelector("span");
+    sl.textContent=ts>0.004?ts.toFixed(2)+"s":"앞";
+    sr.textContent=te>0.004?te.toFixed(2)+"s":"뒤";
+    sl.style.transform = xl<34 ? "translateX(34px)" : "";
+    sr.style.transform = xr>w-34 ? "translateX(-34px)" : "";
     const left=dur-ts-te;
     info.textContent=`원본 ${dur.toFixed(2)}초 · 남는 길이 ${Math.max(0,left).toFixed(2)}초`;
   };
@@ -2361,7 +2376,7 @@ async function buildEditor(td,l,s,sumEl){
   const lab=t=>{const x=document.createElement("span");x.className="lab";x.textContent=t;return x};
   r2.append(lab("싱크"), mkNudge(l,s,after));
   const r3=document.createElement("div"); r3.className="edrow";
-  r3.append(lab("볼륨"), mkLineGain(l,s,after), lab("음질"), mkLineClean(l,s,after));
+  r3.append(lab("볼륨"), mkLineGain(l,s,after), mkLineClean(l,s,after));
   right.append(r1,r2,r3);
 
   drawWave(); place();
@@ -2428,7 +2443,8 @@ function mkLinePlay(l,src){
     if(wasOn)return;
     b.textContent="…"; b.disabled=true;
     try{
-      const v=await loadVoice(src.path,src.person,src.gain_db,src);
+      const cur=rowNow(l.id,src);
+      const v=await loadVoice(cur.path,cur.person,cur.gain_db,cur);
       const sn=v.ctx.createBufferSource(); sn.buffer=v.buf;
       const g=v.ctx.createGain(); g.gain.value=v.gain;
       sn.connect(g).connect(v.ctx.destination);
@@ -2568,7 +2584,8 @@ async function previewLine(l,s,useVid){
   const lead=1.0;
   prevVid.muted=!!PROJECT.videoBgm;         // 배경음악 트랙이 있으면 원본 대사는 끈다
   prevVid.currentTime=Math.max(0,l.s-lead);
-  const vo=await loadVoice(s.path,s.person,s.gain_db,subs.find(x=>x.line_id===l.id)).catch(()=>null);
+  const cur=rowNow(l.id,s);
+  const vo=await loadVoice(cur.path,cur.person,cur.gain_db,cur).catch(()=>null);
   if(my!==prevToken){ try{vo&&vo.ctx.close()}catch(e){} return }   // 그새 다른 줄을 눌렀다
   let bedA=null;
   if(PROJECT.videoBgm){bedA=new Audio(PROJECT.videoBgm);bedA.currentTime=prevVid.currentTime;bedA.play().catch(()=>{})}
