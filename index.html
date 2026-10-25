@@ -1999,6 +1999,7 @@ async function openAdmin(){
   await pull();drawAdmin();startAdminPoll();
 }
 function drawAdmin(){
+  stopNotePrev();
   $("#aNote").innerHTML=online
     ? `제출 <b>${subs.length} / ${PROJECT.lines.length}</b> 줄`
        + (notes.length?` · 크레딧 소감 <b>${notes.length}</b>개`:"")
@@ -2027,9 +2028,10 @@ function drawAdmin(){
       tr.innerHTML=`<td><b>${esc(c.person)}</b></td>
         <td class="c mono">${mine.length}</td>
         <td class="c mono" style="color:${full?"var(--ok)":up?"var(--amber)":"var(--dim)"}">${up} / ${mine.length}</td>
-        <td class="c">${note?'<span class="dot y"></span>있음':'<span class="dot n"></span>아직'}</td>
+        <td class="c">${note?"":'<span class="dot n"></span>아직'}</td>
         <td class="c">${fin?'<b style="color:var(--ok)">✅ 끝냈습니다</b>':'<span style="color:var(--dim)">—</span>'}</td>
         <td></td>`;
+      if(note)tr.children[3].append(mkNotePlay(notes.find(n=>n.person===c.person)));
       if(up)tr.lastElementChild.append(mkGain(c.person));
       body.append(tr);
     }
@@ -2063,6 +2065,47 @@ function drawAdmin(){
     h.append(tb);box.append(h);
   }
 }
+/* 크레딧 소감 들어보기 — 볼륨 보정을 걸어서 들려준다.
+   그래야 "몇 dB 올릴지" 를 바로 귀로 확인할 수 있다.
+   파일을 blob 으로 받아 와서 트는 이유 : 다른 출처 파일은 Web Audio 로 못 키운다. */
+let notePrev=null, noteCtx=null;
+function stopNotePrev(){
+  if(notePrev){ try{notePrev.pause()}catch(e){} notePrev=null }
+  if(noteCtx){ try{noteCtx.close()}catch(e){} noteCtx=null }
+  $$("#aCast .noteplay").forEach(x=>{x.textContent="▶ 들어보기";x.dataset.on="0"});
+}
+function mkNotePlay(n){
+  const b=document.createElement("button");
+  b.className="mini noteplay"; b.dataset.on="0";
+  b.textContent="▶ 들어보기";
+  b.title=`${(+n.dur||0).toFixed(1)}초 · 볼륨 보정을 적용해서 들려줍니다`;
+  b.onclick=async()=>{
+    const wasOn=b.dataset.on==="1";
+    stopNotePrev();
+    if(wasOn)return;                       // 누르던 것을 다시 누르면 멈춤
+    b.textContent="받는 중…"; b.disabled=true;
+    try{
+      const blob=await (await fetch(pub(n.path))).blob();
+      const a=new Audio(URL.createObjectURL(blob));
+      try{
+        const ctx=new (window.AudioContext||webkitAudioContext)();
+        const g=ctx.createGain();
+        g.gain.value=dbToMul((subs.concat(notes).find(x=>x.person===n.person)||{}).gain_db);
+        ctx.createMediaElementSource(a).connect(g).connect(ctx.destination);
+        noteCtx=ctx;
+      }catch(e){ console.warn("볼륨 적용 실패 — 원래 크기로 들려줍니다",e) }
+      a.onended=()=>stopNotePrev();
+      await a.play();
+      notePrev=a; b.dataset.on="1"; b.textContent="■ 멈춤";
+    }catch(e){
+      $("#aNote").innerHTML=`소감을 재생하지 못했습니다: <b>${esc(e.message||e)}</b>`;
+      b.textContent="▶ 들어보기";
+    }
+    b.disabled=false;
+  };
+  return b;
+}
+
 /* 사람별 볼륨 보정 — 기기마다 녹음 크기가 달라 한 분만 작게 들리는 일이 생긴다.
    원본 녹음은 그대로 두고 '몇 dB 올릴지' 만 저장해서, 최종 영상 만들 때 적용한다.
    그 사람의 모든 줄(소감 포함)에 한꺼번에 걸린다. */
