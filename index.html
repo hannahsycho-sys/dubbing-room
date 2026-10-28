@@ -579,7 +579,12 @@ import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 
 /* ===================== 기본 ===================== */
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const PRE=3.0, TAIL=0.45;   // 녹음 전 3초 카운트 / 대사 뒤 여유
+/* PRE : 녹음 전 세어 주는 시간.
+   TAIL : 대본상 대사가 끝난 뒤에도 녹음을 더 받는 시간.
+          코치님들이 애니보다 느리게 말하면 여기서 잘리므로 넉넉히 둔다.
+          뒤에 남는 빈 소리는 합칠 때 자동으로 다듬어지니 손해가 없다. */
+const PRE=3.0;
+const TAIL=Math.max(0.3, Math.min(4, +(PROJECT.mix?.recTail) || 1.2));
 /* 내 대사가 시작되기 '조금 전에' 원음을 끊는다.
    브라우저가 소리를 미리 버퍼에 담아둬서, 정확히 시작점에 음소거해도
    이미 담긴 0.1~0.2초가 흘러나온다 → 내 대사의 원어민 목소리가 새어나온다.

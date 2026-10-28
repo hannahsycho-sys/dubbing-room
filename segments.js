@@ -25,6 +25,11 @@ const PROJECT = {
     voiceVolume: 1.25,  // 코치 목소리 크기
     titleSec:    6.6,   // 오프닝 길이 (초)
 
+    // 대사가 끝난 뒤 녹음을 몇 초 더 받을지.
+    // 코치님들이 애니보다 천천히 말해서 뒤가 잘리면 이 값을 키우세요.
+    recTail:     1.2,
+
+
     // 음악 — warm(따뜻한 피아노) / cinema(영화 오프닝) / calm(잔잔한 앰비언트)
     titleMusic:      "warm",
     creditsMusic:    "warm",
@@ -173,11 +178,11 @@ const PROJECT = {
       text:"they look great!",
       ipa:"/ðeɪ lʊk ɡreɪt/",
       trans:"진짜 예쁘다!" },
-    { id: 26, team:"black", char:"그레이스", s: 56.22, e: 59.86,
-      text:"What are you wearing? Did you get a dress for the...",
-      ipa:"/wʌt ər ju ˈwɛrɪŋ? dɪd ju ɡɛt ə drɛs fər ðə/",
-      trans:"넌 뭐 입어? 드레스 샀어...?" },
-    { id: 27, team:"black", char:"라일리",   s: 59.86, e: 66.72,
+    { id: 26, team:"black", char:"그레이스", s: 56.22, e: 60.05,
+      text:"What are you wearing? Did you get a dress for the dance?",
+      ipa:"/wʌt ər ju ˈwɛrɪŋ? dɪd ju ɡɛt ə drɛs fər ðə dæns/",
+      trans:"넌 뭐 입어? 댄스파티에 입을 드레스 샀어?" },
+    { id: 27, team:"black", char:"라일리",   s: 60.10, e: 66.72,
       text:"Oh, no, no, no, no! This is a... maybe a Halloween costume? We haven't gone shopping yet.",
       ipa:"/oʊ, noʊ, noʊ, noʊ, noʊ! ðɪs ɪz ə... ˈmeɪbi ə ˌhæləˈwin ˈkɑstum? wi ˈhævənt ɡɔn ˈʃɑpɪŋ jɛt/",
       trans:"아, 아니아니아니! 이건... 핼러윈 의상인가? 우린 아직 쇼핑 안 갔어." },
