@@ -2203,37 +2203,31 @@ function drawAdmin(){
     h.append(tb);box.append(h);
   }
 
-  for(const [tk,t] of Object.entries(PROJECT.teams)){
+  /* 대사 표는 없앴다 — 🎬 전체 편집 에서 영상·파형과 함께 보는 편이 낫다.
+     다만 '아직 안 올라온 줄' 은 거기서 안 보이므로 여기에 짧게 남긴다. */
+  {
+    const miss=PROJECT.lines.filter(l=>!subs.some(x=>x.line_id===l.id));
     const h=document.createElement("div");
-    h.innerHTML=`<h2 style="font-size:16px;margin:22px 0 8px">${esc(t.label)}
-      <span class="mono" style="font-size:12px;color:var(--dim);font-weight:400"> ${mmss(t.start)}–${mmss(t.end)}</span></h2>`;
-    const tb=document.createElement("table");
-    tb.innerHTML=`<thead><tr><th>#</th><th>시간</th><th>캐릭터</th><th>대사</th><th>맡은 사람</th><th>상태</th><th>손보기</th></tr></thead><tbody></tbody>`;
-    for(const l of teamLines(tk)){
-      const p=PROJECT.cast.find(c=>c.team===tk&&c.chars.includes(l.char));
-      const s=subs.find(x=>x.line_id===l.id);
-      const tr=document.createElement("tr");
-      if(justIn.has(l.id))tr.className="justin";
-      tr.innerHTML=`<td class="c">${l.id}</td><td class="c">${tc(l.s)}</td>
-        <td><span class="chip" style="background:${chOf(l.char).color}">${esc(l.char)}</span></td>
-        <td style="max-width:360px">${esc(l.text)}</td>
-        <td>${p?esc(p.person):`<span style="color:var(--rec)">미배정</span>`}</td>
-        <td><span class="dot ${s?"y":"n"}"></span>${s?esc(s.person):"대기"}${
-          s&&scanRes[l.id]?`<span class="flag ${scanRes[l.id].kind}">${esc(scanRes[l.id].msg)}</span>`:""
-        }</td><td></td>`;
-      if(s){
-        const cell=tr.children[6];
-        const sum=document.createElement("span"); sum.className="fixsum";
-        paintSum(sum,l.id);
-        const ed=document.createElement("button");
-        ed.className="mini"; ed.textContent="✎ 편집";
-        ed.title="파형을 보면서 자르기·싱크·볼륨·음질을 손봅니다";
-        ed.onclick=()=>toggleEditor(tr,l,s,sum);
-        cell.append(sum, ed);
+    h.innerHTML=`<h2 style="font-size:16px;margin:22px 0 4px">아직 안 올라온 대사</h2>`;
+    if(!miss.length){
+      h.innerHTML+=`<p style="margin:0;font-size:13px;color:var(--ok)">전원 완료 — ${PROJECT.lines.length}줄 모두 올라왔습니다.</p>`;
+    }else{
+      h.innerHTML+=`<p style="margin:0 0 8px;font-size:12.5px;color:var(--dim)">${miss.length}줄 남았습니다.</p>`;
+      const tb=document.createElement("table");
+      tb.innerHTML=`<thead><tr><th>#</th><th>시간</th><th>캐릭터</th><th>대사</th><th>맡은 사람</th></tr></thead><tbody></tbody>`;
+      const body=tb.querySelector("tbody");
+      for(const l of miss){
+        const p2=PROJECT.cast.find(c=>c.team===l.team&&c.chars.includes(l.char));
+        const tr=document.createElement("tr");
+        tr.innerHTML=`<td class="c">${l.id}</td><td class="c mono">${tc(l.s)}</td>
+          <td><span class="chip" style="background:${chOf(l.char).color}">${esc(l.char)}</span></td>
+          <td style="max-width:420px">${esc(l.text)}</td>
+          <td>${p2?esc(p2.person):`<span style="color:var(--rec)">미배정</span>`}</td>`;
+        body.append(tr);
       }
-      tb.querySelector("tbody").append(tr);
+      h.append(tb);
     }
-    h.append(tb);box.append(h);
+    box.append(h);
   }
 }
 /* 크레딧 소감 들어보기 — 볼륨 보정을 걸어서 들려준다.
