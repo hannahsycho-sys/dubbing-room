@@ -2498,8 +2498,18 @@ function teStop(){
   TE.playing=false;
   const b=$("#tePlay"); if(b)b.textContent="▶ 재생";
 }
+/* previewLine 이 만들어 둔 떠돌이 영상을 치운다 */
+function dropStrayVid(){
+  if(prevVid && prevVid!==(TE&&TE.vid) && prevVid.isConnected && !prevVid.id){
+    try{prevVid.pause()}catch(e){}
+    prevVid.remove();
+  }
+  prevVid=null;
+}
+
 function teClose(){
   teStop();
+  dropStrayVid();
   if(TE&&TE.raf){cancelAnimationFrame(TE.raf);TE.raf=0}
   if(TE&&TE.keys)window.removeEventListener("keydown",TE.keys);
   $("#teWrap")?.remove(); TE=null;
@@ -2508,6 +2518,7 @@ function teClose(){
 $("#aTE").onclick=()=>{ if($("#teWrap")){teClose();return} teOpen(); };
 
 function teOpen(){
+  dropStrayVid();
   const host=$("#aCast");
   const w=document.createElement("div"); w.className="tebox"; w.id="teWrap";
   w.innerHTML=`
@@ -3970,10 +3981,16 @@ function mkNudge(l,s,after){
 let prevAudio=null, prevVid=null;
 let prevToken=0;
 async function previewLine(l,s,useVid){
+  /* 전체 편집에서 재생 중이면 끼어들지 않는다 — 영상만 되감기면 소리와 어긋난다 */
+  if(!useVid && TE && TE.playing) return;
   const my=++prevToken;                       // 늦게 시작한 쪽만 살아남는다
   if(prevAudio){prevAudio.pause();prevAudio=null}
+  /* 전체 편집이 열려 있으면 그 화면의 영상에서 보여 준다.
+     예전에는 여기서 <video> 를 새로 만들어 페이지 맨 아래에 붙였는데,
+     이미 보고 있는 영상을 두고 엉뚱한 자리에 또 하나가 생겨 버렸다. */
   if(useVid){ prevVid=useVid; }
-  else if(!prevVid){
+  else if(TE&&TE.vid){ prevVid=TE.vid; }
+  else if(!prevVid||!prevVid.isConnected){
     prevVid=document.createElement("video");
     prevVid.style.cssText="width:100%;max-width:560px;border-radius:6px;margin-top:14px;display:block";
     prevVid.playsInline=true; prevVid.src=PROJECT.video;
