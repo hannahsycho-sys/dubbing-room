@@ -732,6 +732,9 @@ function voiceAudio(url){
   const a=new Audio(url);
   a.preload="auto"; a.playbackRate=1;
   a.preservesPitch=a.mozPreservesPitch=a.webkitPreservesPitch=true;
+  /* 아주 크게 녹음된 목소리는 풀어낼 때 최대치를 넘겨 '뚜뚜' 하고 깨진다.
+     약간의 여유(-1.4dB)를 두면 깨지지 않는다. 최종 영상은 따로 평준화하므로 영향 없다. */
+  a.volume=0.85;
   return a;
 }
 const bgm=PROJECT.videoBgm?Object.assign(new Audio(PROJECT.videoBgm),{preload:"auto"}):null;
@@ -1733,8 +1736,17 @@ async function playMix(from){
   for(const c of cues){
     if(start>c.l.s && start<c.l.e){
       fired.add(c.l.id);
-      const a=players.get(c.l.id);
-      try{ a.currentTime=Math.max(0,start-c.l.s); a.play().catch(()=>{}) }catch(e){}
+      try{
+        const old=players.get(c.l.id);
+        if(old){ try{old.pause()}catch(_){ } }
+        const a=voiceAudio(c.url);
+        players.set(c.l.id,a); mixPlaying.push(a);
+        /* 되감기를 못 하는 파일이면 그냥 처음부터 튼다 (조금 늦게 시작할 뿐) */
+        a.addEventListener("loadedmetadata",()=>{
+          try{ a.currentTime=Math.max(0,start-c.l.s) }catch(_){ }
+        },{once:true});
+        a.play().catch(()=>{});
+      }catch(e){}
     }
   }
 
@@ -1747,7 +1759,15 @@ async function playMix(from){
     for(const c of cues){
       if(!fired.has(c.l.id)&&t>=c.l.s&&t<c.l.s+.35){
         fired.add(c.l.id);
-        const a=players.get(c.l.id); try{a.currentTime=0;a.play().catch(()=>{})}catch(e){}
+        /* 녹음기로 만든 webm 은 길이·되감기 정보가 없어서, 한 번 재생된 요소를
+           currentTime=0 으로 되감으면 깨진 소리가 난다. 되감지 말고 새로 만들어 튼다. */
+        try{
+          const old=players.get(c.l.id);
+          if(old){ try{old.pause()}catch(_){ } }
+          const a=voiceAudio(c.url);
+          players.set(c.l.id,a); mixPlaying.push(a);
+          a.play().catch(()=>{});
+        }catch(e){ console.warn("목소리 재생 실패",c.l.id,e) }
         /* 원본 소리를 틀어둔 상태면 그 대사 동안만 원본을 죽여 겹치지 않게 */
         if($("#dMon").value==="orig"){
           vid.muted=true;
