@@ -149,6 +149,21 @@ def trim_of(row):
     return f + ",asetpts=PTS-STARTPTS,"
 
 
+def eq_of(row):
+    """사람마다 다른 마이크 음색을 비슷하게 맞추는 3밴드 보정."""
+    try:
+        lo = float(row.get("eq_low") or 0)
+        mi = float(row.get("eq_mid") or 0)
+        hi = float(row.get("eq_high") or 0)
+    except (TypeError, ValueError):
+        return ""
+    out = []
+    if abs(lo) > 0.05: out.append(f"equalizer=f=180:t=q:w=0.9:g={lo:.1f}")
+    if abs(mi) > 0.05: out.append(f"equalizer=f=1100:t=q:w=1.1:g={mi:.1f}")
+    if abs(hi) > 0.05: out.append(f"equalizer=f=5000:t=q:w=0.9:g={hi:.1f}")
+    return (",".join(out) + ",") if out else ""
+
+
 def clean_of(row):
     try: return CLEAN_CHAIN.get(int(row.get("clean") or 0), "")
     except (TypeError, ValueError): return ""
@@ -182,6 +197,7 @@ for i, l in enumerate([l for l in have if l["id"] in files], start=1):
     gfil = f"volume={gdb:+.1f}dB," if abs(gdb) > 0.05 else ""
     cfil_ = clean_of(latest[l["id"]])
     tfil_ = trim_of(latest[l["id"]])
+    efil_ = eq_of(latest[l["id"]])
     # 따로 녹음한 목소리를 자연스럽게 잇기 :
     #   앞 묵음 제거 → 음량 평준화 → 양끝 짧은 페이드 → 제자리로 밀기
     filt.append(
@@ -189,6 +205,7 @@ for i, l in enumerate([l for l in have if l["id"] in files], start=1):
         f"{tfil_}"
         f"silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.025:detection=peak,"
         f"{cfil_}"
+        f"{efil_}"
         f"loudnorm=I=-20:TP=-2.0:LRA=11,"
         f"afade=t=in:st=0:d=0.015,"
         f"{gfil}"
@@ -313,9 +330,10 @@ else:
         ng = float(nv_.get("gain_db") or 0)
         ngf = f"volume={ng:+.1f}dB," if abs(ng) > 0.05 else ""
         ncl = clean_of(nv_)
+        neq = eq_of(nv_)
         ntr = trim_of(dict(nv_, dur=n.get("dur") or nv_.get("dur") or 0))
         cfil.append(f"[{ai}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
-                    f"{ntr}{ncl}loudnorm=I=-18:TP=-2.0:LRA=11,{ngf}adelay={dly}|{dly}[n{ai}]")
+                    f"{ntr}{ncl}{neq}loudnorm=I=-18:TP=-2.0:LRA=11,{ngf}adelay={dly}|{dly}[n{ai}]")
         amix_in.append(f"[n{ai}]"); ai += 1
 
     c_audio = os.path.join(tmp, "credits_audio.wav")

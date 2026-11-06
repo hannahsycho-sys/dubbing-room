@@ -23,6 +23,9 @@ create table if not exists public.submissions (
   clean       smallint    not null default 0,   -- 음질 보정 (0=끄기 1=약하게 2=보통 3=강하게)
   trim_s      real        not null default 0,   -- 앞에서 잘라낼 길이 (초)
   trim_e      real        not null default 0,   -- 뒤에서 잘라낼 길이 (초)
+  eq_low      real        not null default 0,   -- 음색 보정 저음 (dB)
+  eq_mid      real        not null default 0,   -- 음색 보정 중음 (dB)
+  eq_high     real        not null default 0,   -- 음색 보정 고음 (dB)
   created_at  timestamptz not null default now()
 );
 -- 이미 만들어 둔 표에 칸만 추가할 때
@@ -31,6 +34,9 @@ alter table public.submissions add column if not exists gain_db real not null de
 alter table public.submissions add column if not exists clean smallint not null default 0;
 alter table public.submissions add column if not exists trim_s real not null default 0;
 alter table public.submissions add column if not exists trim_e real not null default 0;
+alter table public.submissions add column if not exists eq_low  real not null default 0;
+alter table public.submissions add column if not exists eq_mid  real not null default 0;
+alter table public.submissions add column if not exists eq_high real not null default 0;
 create index if not exists submissions_project_idx on public.submissions (project, line_id);
 
 -- 3) 권한

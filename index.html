@@ -540,6 +540,8 @@ tr.justin td{animation:flashin 2.4s ease-out}
       <button class="btn sm alt" id="aNoteZip">⤓ 크레딧 소감만 (ZIP)</button>
       <button class="btn sm alt" id="aScan">🔎 타이밍 일괄 점검</button>
       <button class="btn sm" id="aTE">🎬 전체 편집</button>
+      <button class="btn sm alt" id="aMatch">🎚 목소리 맞추기</button>
+      <button class="btn sm alt hide" id="aMatchUndo">↺ 맞추기 되돌리기</button>
       <button class="btn sm alt" id="aAuto">✨ 겹침 자동 정리</button>
       <button class="btn sm alt hide" id="aAutoUndo">↺ 자동 정리 되돌리기</button>
       <button class="btn sm alt hide" id="aTime">⏱ 타이밍 맞추기</button>
@@ -2132,6 +2134,8 @@ function drawAdmin(){
   try{
     const has=!!JSON.parse(localStorage.getItem(AUTOKEY())||"null");
     $("#aAutoUndo").classList.toggle("hide", !has);
+    const hasM=!!JSON.parse(localStorage.getItem(MKEY())||"null");
+    $("#aMatchUndo").classList.toggle("hide", !hasM);
   }catch(e){}
   $("#aNote").innerHTML=online
     ? `제출 <b>${subs.length} / ${PROJECT.lines.length}</b> 줄`
@@ -2215,6 +2219,27 @@ function drawAdmin(){
 /* 크레딧 소감 들어보기 — 볼륨 보정을 걸어서 들려준다.
    그래야 "몇 dB 올릴지" 를 바로 귀로 확인할 수 있다.
    파일을 blob 으로 받아 와서 트는 이유 : 다른 출처 파일은 Web Audio 로 못 키운다. */
+/* 말소리 구간의 크기를 기준으로 음량을 맞춘다 (mix() 의 polish 와 같은 기준) */
+function normalizeBuffer(buf){
+  const d=buf.getChannelData(0), n=d.length;
+  let peak=0; for(let i=0;i<n;i+=3){const v=Math.abs(d[i]); if(v>peak)peak=v}
+  if(peak<0.0005)return buf;
+  const thr=Math.max(peak*0.045,0.004);
+  let sum=0,cnt=0;
+  for(let i=0;i<n;i++){const v=Math.abs(d[i]); if(v>=thr){sum+=d[i]*d[i];cnt++}}
+  if(cnt<200)return buf;
+  const rms=Math.sqrt(sum/cnt);
+  let g=rms>0.0005 ? TARGET_RMS/rms : 1;
+  g=Math.max(0.35,Math.min(3.5,g));
+  if(peak*g>0.97)g=0.97/peak;              // 깨지지 않게
+  if(Math.abs(g-1)<0.02)return buf;
+  for(let c=0;c<buf.numberOfChannels;c++){
+    const ch=buf.getChannelData(c);
+    for(let i=0;i<ch.length;i++)ch[i]*=g;
+  }
+  return buf;
+}
+
 /* 앞뒤를 잘라낸 버퍼를 만든다 (원본 파일은 그대로 둔다) */
 function trimBuffer(buf,ts,te){
   ts=Math.max(0,+ts||0); te=Math.max(0,+te||0);
@@ -2556,7 +2581,24 @@ let mixCtx=null;
 const mixBufs=new Map();
 function mixKey(url,row){
   const r=row||{};
-  return `${url}|${+r.trim_s||0}|${+r.trim_e||0}|${+r.clean||0}`;
+  return `${url}|${+r.trim_s||0}|${+r.trim_e||0}|${+r.clean||0}`
+        +`|${+r.eq_low||0}|${+r.eq_mid||0}|${+r.eq_high||0}`;
+}
+/* 음색 보정 — 최종 영상(ffmpeg equalizer)과 같은 주파수·세기 */
+async function eqBuffer(buf,row){
+  const lo=+row.eq_low||0, mi=+row.eq_mid||0, hi=+row.eq_high||0;
+  if(!lo&&!mi&&!hi)return buf;
+  const off=new OfflineAudioContext(buf.numberOfChannels,buf.length,buf.sampleRate);
+  const src=off.createBufferSource(); src.buffer=buf;
+  let node=src;
+  for(const [f,q,g] of [[180,0.9,lo],[1100,1.1,mi],[5000,0.9,hi]]){
+    if(!g)continue;
+    const bq=off.createBiquadFilter();
+    bq.type="peaking"; bq.frequency.value=f; bq.Q.value=q; bq.gain.value=g;
+    node.connect(bq); node=bq;
+  }
+  node.connect(off.destination); src.start();
+  return off.startRendering();
 }
 async function voiceBuffer(l,url){
   const row=subs.find(x=>x.line_id===l.id);
@@ -2570,6 +2612,12 @@ async function voiceBuffer(l,url){
     const lv=Math.max(0,Math.min(3,+row.clean||0));
     if(lv)buf=await cleanBuffer(buf,lv);
   }
+  /* 사람마다 녹음 크기가 다른 것을 같은 기준으로 맞춘다.
+     최종 영상(ffmpeg loudnorm)과 같은 효과를 미리듣기에서도 내기 위한 것 —
+     이게 없으면 편집하며 듣는 소리와 완성본 소리가 달라진다.
+     선생님이 맞춘 볼륨 보정(gain_db)은 이 위에 더해진다. */
+  buf=normalizeBuffer(buf);
+  if(row) buf=await eqBuffer(buf,row);
   mixBufs.set(key,buf);
   return buf;
 }
@@ -2581,6 +2629,142 @@ function playBuffer(buf,gainMul){
   src.start();
   return {pause(){ try{src.stop()}catch(e){} try{src.disconnect()}catch(e){} }};
 }
+
+/* ===== 목소리 맞추기 =====
+   코치님마다 마이크·방이 다른 것을 "같은 자리에서 녹음한 것처럼" 가깝게 만든다.
+     · 크기  — 전원을 같은 기준 음량으로
+     · 잡음  — 각자의 잡음 정도에 맞춰 보정 단계를 고른다
+     · 음색  — 저/중/고음 균형을 전원 평균 쪽으로 끌어당긴다
+   전부 '숫자만' 저장하므로 원본 녹음은 그대로이고, 언제든 되돌릴 수 있다. */
+const MKEY=()=>`dubroom:match:${PROJECT.key}`;
+
+async function analysePerson(items){
+  let rmsSum=0, nfSum=0, n=0;
+  const bandSum=[0,0,0];
+  for(const it of items){
+    let buf;
+    try{
+      const ctx=new (window.AudioContext||webkitAudioContext)();
+      buf=await ctx.decodeAudioData(await (await fetch(pub(it.s.path))).arrayBuffer());
+      try{ctx.close()}catch(e){}
+    }catch(e){ continue }
+    const d=buf.getChannelData(0), sr=buf.sampleRate;
+    let peak=0; for(let i=0;i<d.length;i+=3){const v=Math.abs(d[i]); if(v>peak)peak=v}
+    const thr=Math.max(peak*0.08,0.006);
+    let sp=0,spn=0, nz=0,nzn=0;
+    for(let i=0;i<d.length;i++){
+      const v=d[i]*d[i];
+      if(Math.abs(d[i])>=thr){sp+=v;spn++} else {nz+=v;nzn++}
+    }
+    if(spn<400)continue;
+    rmsSum+=Math.sqrt(sp/spn);
+    nfSum += nzn>400 ? Math.sqrt(nz/nzn) : 0.0003;
+    /* 저·중·고 대역 에너지 — 필터를 통과시켜 잰다 */
+    for(let bi=0;bi<3;bi++){
+      const [fc,type]=[[300,"lowpass"],[1400,"bandpass"],[4500,"highpass"]][bi];
+      const oc=new OfflineAudioContext(1,buf.length,sr);
+      const s0=oc.createBufferSource(); s0.buffer=buf;
+      const bq=oc.createBiquadFilter(); bq.type=type; bq.frequency.value=fc; bq.Q.value=0.8;
+      s0.connect(bq); bq.connect(oc.destination); s0.start();
+      const out=await oc.startRendering();
+      const o=out.getChannelData(0);
+      let e=0; for(let i=0;i<o.length;i+=2)e+=o[i]*o[i];
+      bandSum[bi]+=Math.sqrt(e/Math.ceil(o.length/2));
+    }
+    n++;
+  }
+  if(!n)return null;
+  return {rms:rmsSum/n, nf:nfSum/n, band:bandSum.map(x=>x/n)};
+}
+
+$("#aMatch").onclick=async()=>{
+  const b=$("#aMatch"); b.disabled=true;
+  try{
+    const by=new Map();
+    for(const l of PROJECT.lines){
+      const sb_=subs.find(x=>x.line_id===l.id); if(!sb_)continue;
+      if(!by.has(sb_.person))by.set(sb_.person,[]);
+      by.get(sb_.person).push({l,s:sb_});
+    }
+    if(!by.size)throw new Error("제출된 녹음이 없습니다.");
+
+    const snap=[];
+    for(const [,items] of by) for(const it of items)
+      snap.push({id:it.s.id, line_id:it.l.id, gain_db:+it.s.gain_db||0, clean:+it.s.clean||0,
+                 eq_low:+it.s.eq_low||0, eq_mid:+it.s.eq_mid||0, eq_high:+it.s.eq_high||0});
+
+    const people=[...by.keys()], info={};
+    for(let i=0;i<people.length;i++){
+      prog(i/people.length*75,`목소리를 살펴보는 중… ${i+1} / ${people.length} (${esc(people[i])})`);
+      info[people[i]]=await analysePerson(by.get(people[i]));
+    }
+    const ok=people.filter(p=>info[p]);
+    if(!ok.length)throw new Error("녹음을 읽지 못했습니다.");
+
+    const med=a=>{const v=[...a].sort((x,y)=>x-y);return v[Math.floor(v.length/2)]};
+    const tRms=med(ok.map(p=>info[p].rms));
+    const tBand=[0,1,2].map(i=>med(ok.map(p=>info[p].band[i])));
+
+    prog(85,"설정을 저장하는 중…");
+    let changed=0; const report=[];
+    for(const p of ok){
+      const f=info[p];
+      const gain=Math.max(-12,Math.min(12, +(20*Math.log10(tRms/Math.max(f.rms,1e-6))).toFixed(1)));
+      const nfDb=20*Math.log10(Math.max(f.nf,1e-6));
+      const clean = nfDb>-34 ? 3 : nfDb>-40 ? 2 : nfDb>-46 ? 1 : 0;
+      const eq=[0,1,2].map(i=>{
+        const d=20*Math.log10(Math.max(tBand[i],1e-6)/Math.max(f.band[i],1e-6));
+        return Math.max(-6,Math.min(6,+(d*0.6).toFixed(1)));   // 절반 정도만 당긴다
+      });
+      const patch={gain_db:gain, clean, eq_low:eq[0], eq_mid:eq[1], eq_high:eq[2]};
+      const {error}=await sb.from("submissions").update(patch)
+        .eq("project",PROJECT.key).eq("person",p);
+      if(error){
+        prog(0, /eq_low/.test(error.message||"")
+          ? `음색 보정을 쓰려면 Supabase → SQL Editor 에서 실행하세요:<br>
+             <code>alter table public.submissions add column if not exists eq_low real not null default 0;
+             alter table public.submissions add column if not exists eq_mid real not null default 0;
+             alter table public.submissions add column if not exists eq_high real not null default 0;</code>`
+          : `<b style="color:var(--rec)">저장 실패: ${esc(error.message)}</b>`);
+        b.disabled=false; return;
+      }
+      subs.forEach(x=>{ if(x.person===p) Object.assign(x,patch) });
+      notes.forEach(x=>{ if(x.person===p) Object.assign(x,patch) });
+      changed++;
+      report.push(`${p} ${gain>0?"+":""}${gain}dB · 잡음 ${CLEAN_NAMES[clean]}`);
+    }
+    try{ localStorage.setItem(MKEY(), JSON.stringify(snap)) }catch(e){}
+    $("#aMatchUndo").classList.remove("hide");
+    mixBufs.clear();
+    drawAdmin();
+    progDone(`<b>${changed}명</b>의 목소리를 같은 기준으로 맞췄습니다.<br>`
+      + report.map(esc).join(" / ")
+      + `<br>이제 <b>▶ 합본 들어보기</b> 로 확인하시고, 참가자 현황에서 직접 더 손보셔도 됩니다.
+         마음에 안 들면 <b>↺ 맞추기 되돌리기</b>.`);
+  }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
+  b.disabled=false;
+};
+
+$("#aMatchUndo").onclick=async()=>{
+  const b=$("#aMatchUndo"); b.disabled=true;
+  try{
+    const snap=JSON.parse(localStorage.getItem(MKEY())||"null");
+    if(!snap||!snap.length)throw new Error("되돌릴 기록이 없습니다.");
+    for(let i=0;i<snap.length;i++){
+      prog(i/snap.length*95,`되돌리는 중… ${i+1} / ${snap.length}`);
+      const o=snap[i];
+      const {error}=await sb.from("submissions").update({
+        gain_db:o.gain_db, clean:o.clean,
+        eq_low:o.eq_low, eq_mid:o.eq_mid, eq_high:o.eq_high}).eq("id",o.id);
+      if(error)throw error;
+      const cur=subs.find(x=>x.line_id===o.line_id); if(cur)Object.assign(cur,o);
+    }
+    try{ localStorage.removeItem(MKEY()) }catch(e){}
+    b.classList.add("hide"); mixBufs.clear(); drawAdmin();
+    progDone(`${snap.length}줄을 맞추기 전으로 되돌렸습니다.`);
+  }catch(e){ prog(0,`<b style="color:var(--rec)">되돌리기 실패: ${esc(e.message||e)}</b>`) }
+  b.disabled=false;
+};
 
 /* ===== 겹침 자동 정리 =====
    코치님마다 애니보다 천천히 말씀하셔서 다음 사람 대사를 침범하는 일이 생긴다.
