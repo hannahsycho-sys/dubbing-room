@@ -552,6 +552,11 @@ tr.justin td{animation:flashin 2.4s ease-out}
       <span id="aLive" class="livetag">자동 갱신 중</span>
       <button class="btn sm alt" id="aPreview">▶ 합본 들어보기</button>
       <button class="btn sm" id="aMp4">⤓ 본편 영상 받기 (MP4)</button>
+      <button class="btn sm" id="aMp4Sub">⤓ 자막 넣은 영상 (MP4)</button>
+      <button class="btn sm alt" id="aSrt">⤓ 자막 파일만 (SRT)</button>
+      <label class="sw" style="font-size:12px;color:var(--dim)"
+             title="끄면 영어 대사만 나옵니다">
+        <input type="checkbox" id="aSubKo" checked> 한글 번역 같이</label>
       <button class="btn sm alt" id="aWav">⤓ 합본 음원만 (WAV)</button>
       <button class="btn sm alt" id="aZip">⤓ 개별 녹음 모아서 (ZIP)</button>
       <button class="btn sm alt" id="aNoteZip">⤓ 크레딧 소감만 (ZIP)</button>
@@ -4208,6 +4213,73 @@ function prog(pct,msg){
 }
 const progDone=msg=>{$("#aFill").style.width="100%";$("#aStat").innerHTML=msg;
   setTimeout(()=>$("#aBar").classList.add("hide"),4000)};
+/* ===================== 시청용 자막 =====================
+   들리는 대로 맞춘다 — 코치님 싱크(offset)·자르기·속도를 그대로 반영해서,
+   말이 나오는 순간에 글자가 뜨게 한다. 녹음이 없는 줄은 대본 시각 그대로. */
+function subCues(){
+  const out=[];
+  for(const l of PROJECT.lines){
+    const sb_=subs.find(x=>x.line_id===l.id);
+    let st=l.s, en=l.e;
+    if(sb_){
+      st=l.s+(+sb_.offset_ms||0)/1000;
+      const sp=Math.max(0.5,+sb_.speed||1);
+      const raw=(+sb_.dur||(l.e-l.s))-(+sb_.trim_s||0)-(+sb_.trim_e||0);
+      en=st+Math.max(0.2,raw)/sp;
+    }
+    st=Math.max(0,st);
+    en=Math.max(st+0.9,en);                       // 너무 빨리 사라지지 않게
+    out.push({st,en,en_:l.text||"",ko:l.trans||""});
+  }
+  out.sort((a,b)=>a.st-b.st);
+  /* 앞 자막이 다음 자막을 덮지 않게 — 겹치면 앞쪽을 줄인다 */
+  for(let i=0;i<out.length-1;i++)
+    if(out[i].en>out[i+1].st-0.08) out[i].en=Math.max(out[i].st+0.5,out[i+1].st-0.08);
+  return out;
+}
+const 한글자막=()=>!!$("#aSubKo")?.checked;
+
+const srtTime=t=>{const h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:`
+        +`${x.toFixed(3).padStart(6,"0").replace(".",",")}`};
+function srtText(){
+  const ko=한글자막();
+  return subCues().map((c,i)=>
+    `${i+1}\n${srtTime(c.st)} --> ${srtTime(c.en)}\n`
+    + c.en_ + (ko&&c.ko?`\n${c.ko}`:"") + "\n").join("\n");
+}
+
+const assTime=t=>{const h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;
+  return `${h}:${String(m).padStart(2,"0")}:${x.toFixed(2).padStart(5,"0")}`};
+/* ASS 는 중괄호가 명령어라 글자로 쓸 수 없다. 줄바꿈은 \N. */
+const assEsc=t=>String(t).replace(/[{}]/g,"").replace(/\r?\n/g," ");
+function assText(W,H){
+  const ko=한글자막();
+  const head=
+`[Script Info]
+ScriptType: v4.00+
+PlayResX: ${W}
+PlayResY: ${H}
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Main,NanumGothic,${Math.round(H*0.062)},&H00FFFFFF,&H000000FF,&H00181818,&H90000000,0,0,0,0,100,100,0,0,1,${(H*0.0042).toFixed(1)},0.8,2,${Math.round(W*0.05)},${Math.round(W*0.05)},${Math.round(H*0.055)},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+  const 한글크기=Math.round(H*0.046);
+  const body=subCues().map(c=>{
+    let t=assEsc(c.en_);
+    if(ko&&c.ko) t+=`\\N{\\fs${한글크기}\\c&H9FE2FF&}`+assEsc(c.ko);
+    return `Dialogue: 0,${assTime(c.st)},${assTime(c.en)},Main,,0,0,0,,${t}`;
+  }).join("\n");
+  return head+body+"\n";
+}
+
 const dl=(blob,name)=>{const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download=name;a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),20000)};
@@ -4322,6 +4394,70 @@ $("#aMp4").onclick=async()=>{
     ffProgCb=null;
     prog(0,`<b style="color:var(--rec)">${e.message}</b>`);
   }finally{b.disabled=false;b.textContent="⤓ 본편 영상 받기 (MP4)"}
+};
+
+$("#aSrt").onclick=()=>{
+  if(!PROJECT.lines.length)return;
+  dl(new Blob(["\uFEFF"+srtText()],{type:"text/plain;charset=utf-8"}),
+     `${PROJECT.key}_자막.srt`);
+  progDone(`자막 파일을 받았습니다 — 영상과 <b>같은 폴더에 같은 이름</b>으로 두면
+    대부분의 플레이어가 알아서 띄웁니다. 유튜브에 올릴 때는 자막으로 올리시면 됩니다.`);
+};
+
+/* 영상에 자막을 박아서 받기 — 어디서 봐도 그냥 보이게 */
+let 자막폰트=null;
+async function subFont(){
+  if(자막폰트)return 자막폰트;
+  const r=await fetch("https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nanumgothic/NanumGothic-Regular.ttf");
+  if(!r.ok)throw new Error("자막 글꼴을 받지 못했습니다 (인터넷 확인).");
+  자막폰트=new Uint8Array(await r.arrayBuffer());
+  return 자막폰트;
+}
+$("#aMp4Sub").onclick=async()=>{
+  const b=$("#aMp4Sub");b.disabled=true;b.textContent="만드는 중…";
+  try{
+    prog(2,"녹음을 모아 소리를 합치는 중…");
+    const mixed=await mix();
+    const wavData=new Uint8Array(wav(mixed));
+
+    const ff=await getFFmpeg().catch(()=>{
+      throw new Error("영상 합치기 도구를 못 받았습니다 (인터넷 차단일 수 있습니다).");
+    });
+
+    prog(22,"자막 글꼴을 받는 중…");
+    const font=await subFont();
+
+    prog(30,"영상을 읽는 중…");
+    await ff.writeFile("v.mp4",await ff.util.fetchFile(PROJECT.video));
+    await ff.writeFile("a.wav",wavData);
+    try{ await ff.createDir("/fonts") }catch(e){}
+    await ff.writeFile("/fonts/NanumGothic.ttf",font);
+
+    /* 영상 크기에 맞춰 글자 크기를 정한다 */
+    const vw=(vid&&vid.videoWidth)||1280, vh=(vid&&vid.videoHeight)||720;
+    await ff.writeFile("sub.ass",new TextEncoder().encode(assText(vw,vh)));
+
+    ffProgCb=pc=>prog(35+Math.min(1,pc)*62,"자막을 입히는 중… (글자를 그려 넣느라 몇 분 걸립니다)");
+    await ff.exec(["-i","v.mp4","-i","a.wav","-map","0:v:0","-map","1:a:0",
+      "-vf","subtitles=sub.ass:fontsdir=/fonts",
+      "-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p",
+      "-c:a","aac","-b:a","192k","-t",String(PROJECT.dubEnd),
+      "-movflags","+faststart","outsub.mp4"]);
+    ffProgCb=null;
+
+    const data=await ff.readFile("outsub.mp4");
+    try{ff.terminate()}catch(e){}
+    if(!data||!data.length)throw new Error("합치기 결과가 비어 있습니다.");
+
+    dl(new Blob([data],{type:"video/mp4"}),`${PROJECT.key}_본편_자막.mp4`);
+    const miss=PROJECT.lines.length-subs.length;
+    progDone(`✅ 자막 넣은 본편 완성 — ${(data.length/1048576).toFixed(1)} MB.
+      자막이 영상에 박혀 있어 어디서 틀어도 그냥 보입니다. (타이틀·크레딧은 빠져 있습니다)`+
+      (miss>0?` (아직 ${miss}줄이 비어 있습니다)`:"")+skipNote());
+  }catch(e){
+    ffProgCb=null;
+    prog(0,`<b style="color:var(--rec)">${esc(e.message||e)}</b>`);
+  }finally{b.disabled=false;b.textContent="⤓ 자막 넣은 영상 (MP4)"}
 };
 
 /* ===================== 개별 녹음 모아서 (ZIP) ===================== */
