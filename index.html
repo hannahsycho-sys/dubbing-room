@@ -723,6 +723,15 @@ vid.addEventListener("error",()=>{
   f.onchange=e=>{const x=e.target.files[0];if(x){vid.src=URL.createObjectURL(x);f.remove();say("")}};
   $("#bStat").after(f);
 });
+/* 코치님 목소리는 '연습 배속' 과 무관하게 항상 원속도로 튼다.
+   느리게 틀면 알아들을 수 없고 영상과도 어긋난다.
+   음높이 유지까지 켜 두어, 혹시 배속이 걸려도 낮게 깔리지 않게 한다. */
+function voiceAudio(url){
+  const a=new Audio(url);
+  a.preload="auto"; a.playbackRate=1;
+  a.preservesPitch=a.mozPreservesPitch=a.webkitPreservesPitch=true;
+  return a;
+}
 const bgm=PROJECT.videoBgm?Object.assign(new Audio(PROJECT.videoBgm),{preload:"auto"}):null;
 if(bgm)bgm.preservesPitch=bgm.mozPreservesPitch=bgm.webkitPreservesPitch=true;
 
@@ -1053,7 +1062,7 @@ function drawCues(){
         const play=document.createElement("button");
         play.className="tk tkplay";
         play.textContent=`▶ ${i+1}번${t.dur?` · ${t.dur.toFixed(1)}초`:""}${picked?"  (제출본)":""}`;
-        play.onclick=()=>{stopAll();mineA=new Audio(t.url);mineA.play()};
+        play.onclick=()=>{stopAll();mineA=voiceAudio(t.url);mineA.play()};
         const del=document.createElement("button");
         del.className="tk tkdel";del.textContent="✕";del.title="이 테이크만 지우기";
         del.onclick=()=>delTake(l,i);
@@ -1286,8 +1295,7 @@ $("#pRate").onchange=()=>{
   const r=rate();
   try{ vid.playbackRate=r }catch(e){}
   if(bgm){ try{ bgm.playbackRate=r }catch(e){} }
-  if(mineA){ try{ mineA.playbackRate=r }catch(e){} }
-  mixPlaying.forEach(a=>{ try{ a.playbackRate=r }catch(e){} });
+  /* 코치님 목소리에는 배속을 걸지 않는다 — 원속도가 아니면 알아들을 수 없다 */
 };
 
 /* 소리 규칙
@@ -1555,7 +1563,7 @@ async function record(l){
     : [];
   const rec1=leadInfo.filter(x=>x.v), raw1=leadInfo.filter(x=>!x.v);
   const needOriginal=raw1.length>0;          // 원음을 틀어 줘야 하는 구간이 있는가
-  const leadPlayers=new Map(rec1.map(c=>[c.l.id,Object.assign(new Audio(c.v.url),{preload:"auto"})]));
+  const leadPlayers=new Map(rec1.map(c=>[c.l.id,voiceAudio(c.v.url)]));
   leadPlayers.forEach(a=>mixPlaying.push(a));
 
   /* 지금 무엇이 들리는지 알려준다 */
@@ -1672,7 +1680,7 @@ function endRec(){
 /* 어떤 대사를 그 사람 녹음과 함께 들려준다 */
 async function playWith(l,v){
   stopAll();
-  mineA=new Audio(v.url);
+  mineA=voiceAudio(v.url);
   vid.playbackRate=1;
   await seekTo(l.s); await playSafe();
   applyAudio(l.s); mineA.play().catch(()=>{});
@@ -1683,7 +1691,7 @@ async function playWith(l,v){
 async function overlay(l){
   stopAll();
   const off=offOf(l.id)/1000;             // 미세조정한 만큼 늦게/빨리 튼다
-  mineA=new Audio(tkCur(l.id).url);
+  mineA=voiceAudio(tkCur(l.id).url);
   vid.playbackRate=1;
   const lead=Math.min(0.8,l.s);
   await seekTo(l.s-lead);
@@ -1703,7 +1711,7 @@ async function playMix(from){
   /* 영상 전체에서 '지금 소리가 있는' 모든 대사 — 내 테이크 + 다른 분들이 올린 것 */
   const cues=PROJECT.lines.map(l=>{const v=voiceFor(l);return v?{l,...v}:null}).filter(Boolean);
   if(!cues.length){say("아직 녹음된 대사가 없습니다. 먼저 <b>● 녹음</b> 을 해보세요.");return}
-  const players=new Map(cues.map(c=>[c.l.id,Object.assign(new Audio(c.url),{preload:"auto"})]));
+  const players=new Map(cues.map(c=>[c.l.id,voiceAudio(c.url)]));
   players.forEach(a=>mixPlaying.push(a));
   const fired=new Set();
   const mineN=cues.filter(c=>c.person==="나").length, otherN=cues.length-mineN;
@@ -1811,7 +1819,7 @@ function stopNote(){
   try{noteRec&&noteRec.state!=="inactive"&&noteRec.stop()}catch(e){}
   $("#lamp").classList.remove("on");
 }
-$("#nPlay").onclick=()=>{ if(noteTake){stopAll();mineA=new Audio(noteTake.url);mineA.play()} };
+$("#nPlay").onclick=()=>{ if(noteTake){stopAll();mineA=voiceAudio(noteTake.url);mineA.play()} };
 $("#nDel").onclick=async()=>{
   if(!confirm("크레딧 소감을 지우고 다시 녹음할까요?"))return;
   noteTake=null; await tDel(noteKey());
