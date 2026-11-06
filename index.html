@@ -559,6 +559,8 @@ tr.justin td{animation:flashin 2.4s ease-out}
       <button class="btn sm alt hide" id="aMatchUndo">↺ 맞추기 되돌리기</button>
       <button class="btn sm alt hide" id="aCut">✂ 앞뒤 정리</button>
       <button class="btn sm alt hide" id="aCutUndo">↺ 앞뒤 정리 되돌리기</button>
+      <button class="btn sm alt hide" id="aSnap">🎯 싱크 맞추기</button>
+      <button class="btn sm alt hide" id="aSnapUndo">↺ 싱크 맞추기 되돌리기</button>
       <button class="btn sm alt" id="aAuto">✨ 겹침 자동 정리</button>
       <button class="btn sm alt hide" id="aAutoUndo">↺ 자동 정리 되돌리기</button>
       <button class="btn sm alt hide" id="aTime">⏱ 타이밍 맞추기</button>
@@ -2156,6 +2158,8 @@ function drawAdmin(){
     $("#aMatchUndo").classList.toggle("hide", !hasM);
     const hasC=!!JSON.parse(localStorage.getItem(CUTKEY())||"null");
     $("#aCutUndo").classList.toggle("hide", !hasC);
+    const hasS=!!JSON.parse(localStorage.getItem(SNAPKEY())||"null");
+    $("#aSnapUndo").classList.toggle("hide", !hasS);
   }catch(e){}
   $("#aNote").innerHTML=online
     ? `제출 <b>${subs.length} / ${PROJECT.lines.length}</b> 줄`
@@ -2533,7 +2537,9 @@ function teOpen(){
     link("✨ 겹침 자동 정리","#aAuto","싱크만 앞으로 당겨 겹침을 줄인다 (자르기는 건드리지 않음)"),
     link("↺","#aAutoUndo","겹침 정리 되돌리기"),
     link("✂ 앞뒤 정리","#aCut","말이 시작·끝나는 지점을 찾아 앞뒤의 잡음과 묵음을 잘라낸다"),
-    link("↺","#aCutUndo","앞뒤 정리 되돌리기"));
+    link("↺","#aCutUndo","앞뒤 정리 되돌리기"),
+    link("🎯 싱크 맞추기","#aSnap","모든 대사를 대본상 시작 시각에 놓는다"),
+    link("↺","#aSnapUndo","싱크 맞추기 되돌리기"));
 
   $("#teClose").onclick=teClose;
   $("#tePlay").onclick=()=>TE.playing?teStop():tePlay();
@@ -2915,6 +2921,60 @@ function playBuffer(buf,gainMul){
   src.start();
   return {pause(){ try{src.stop()}catch(e){} try{src.disconnect()}catch(e){} }};
 }
+
+/* ===== 싱크 맞추기 =====
+   ✂ 앞뒤 정리 로 앞을 잘라내면 녹음은 '말이 시작되는 지점' 부터 시작한다.
+   그러면 그 목소리는 대본상 그 대사가 시작되는 시각에 나와야 하므로 싱크를 0 으로 놓는다.
+   (자르기 전이라면 앞의 묵음만큼 늦게 들리므로, 앞뒤 정리를 먼저 하는 것이 좋다) */
+const SNAPKEY=()=>`dubroom:snap:${PROJECT.key}`;
+
+$("#aSnap").onclick=async()=>{
+  const b=$("#aSnap"); b.disabled=true;
+  try{
+    const items=PROJECT.lines.map(l=>({l,s:subs.find(x=>x.line_id===l.id)})).filter(x=>x.s);
+    if(!items.length)throw new Error("제출된 녹음이 없습니다.");
+    const snap=items.map(x=>({id:x.s.id, line_id:x.l.id, offset_ms:+x.s.offset_ms||0}));
+    const 손댈것=items.filter(x=>Math.abs(+x.s.offset_ms||0)>0.5);
+    if(!손댈것.length){ progDone("이미 모든 대사가 제자리에 있습니다."); b.disabled=false; return }
+
+    let n=0;
+    for(let i=0;i<손댈것.length;i++){
+      const it=손댈것[i];
+      prog(i/손댈것.length*95,`맞추는 중… ${i+1} / ${손댈것.length}`);
+      const {error}=await sb.from("submissions").update({offset_ms:0}).eq("id",it.s.id);
+      if(error){ prog(0,`<b style="color:var(--rec)">저장 실패: ${esc(error.message)}</b>`); b.disabled=false; return }
+      it.s.offset_ms=0; n++;
+    }
+    try{ localStorage.setItem(SNAPKEY(), JSON.stringify(snap)) }catch(e){}
+    $("#aSnapUndo").classList.remove("hide");
+    mixBufs.clear(); drawAdmin();
+    const 안잘린=items.filter(x=>(+x.s.trim_s||0)<0.03).length;
+    progDone(`<b>${n}줄</b>을 대사 시작 시각에 맞췄습니다.`
+      + (안잘린 ? ` 다만 <b>${안잘린}줄</b>은 앞을 아직 안 잘라서, 앞의 묵음만큼 늦게 들릴 수 있습니다 —
+                   <b>✂ 앞뒤 정리</b> 를 먼저 돌리면 더 잘 맞습니다.` : "")
+      + ` 마음에 안 들면 <b>↺ 싱크 맞추기 되돌리기</b>.`);
+  }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
+  b.disabled=false;
+};
+
+$("#aSnapUndo").onclick=async()=>{
+  const b=$("#aSnapUndo"); b.disabled=true;
+  try{
+    const snap=JSON.parse(localStorage.getItem(SNAPKEY())||"null");
+    if(!snap||!snap.length)throw new Error("되돌릴 기록이 없습니다.");
+    for(let i=0;i<snap.length;i++){
+      prog(i/snap.length*95,`되돌리는 중… ${i+1} / ${snap.length}`);
+      const o=snap[i];
+      const {error}=await sb.from("submissions").update({offset_ms:o.offset_ms}).eq("id",o.id);
+      if(error)throw error;
+      const cur=subs.find(x=>x.line_id===o.line_id); if(cur)cur.offset_ms=o.offset_ms;
+    }
+    try{ localStorage.removeItem(SNAPKEY()) }catch(e){}
+    b.classList.add("hide"); mixBufs.clear(); drawAdmin();
+    progDone(`${snap.length}줄의 싱크를 되돌렸습니다.`);
+  }catch(e){ prog(0,`<b style="color:var(--rec)">되돌리기 실패: ${esc(e.message||e)}</b>`) }
+  b.disabled=false;
+};
 
 /* ===== 녹음 앞의 잡음 잘라내기 =====
    "지지직" 같은 잡음은 소리가 있으므로 '무음 자르기' 로는 안 잘린다.
