@@ -1718,14 +1718,23 @@ async function playMix(from){
   /* 영상 전체에서 '지금 소리가 있는' 모든 대사 — 내 테이크 + 다른 분들이 올린 것 */
   const cues=PROJECT.lines.map(l=>{const v=voiceFor(l);return v?{l,...v}:null}).filter(Boolean);
   if(!cues.length){say("아직 녹음된 대사가 없습니다. 먼저 <b>● 녹음</b> 을 해보세요.");return}
-  const players=new Map(cues.map(c=>[c.l.id,voiceAudio(c.url)]));
-  players.forEach(a=>mixPlaying.push(a));
+  /* 편집 페이지와 같은 방식으로 미리 풀어 둔다 (한 번 푼 것은 다시 쓰므로 두 번째부터는 빠르다) */
+  const bufs=new Map();
+  for(let i=0;i<cues.length;i++){
+    const c=cues[i];
+    if(from==null) say(`목소리를 준비하는 중… ${i+1} / ${cues.length}`,1);
+    try{ bufs.set(c.l.id, await voiceBuffer(c.l,c.url)); }
+    catch(e){ console.warn("목소리를 풀지 못했습니다",c.l.id,e); }
+  }
   const fired=new Set();
   const mineN=cues.filter(c=>c.person==="나").length, otherN=cues.length-mineN;
 
   const start=Math.max(F.start,Math.min(F.end-0.1, from==null?F.start:from));
+  /* 편집 페이지에서 맞춘 싱크를 그대로 따른다 */
+  const atOf=c=>c.l.s + offOf(c.l.id)/1000;
+  const endOf=c=>atOf(c) + ((bufs.get(c.l.id)?.duration) || (c.l.e-c.l.s));
   /* 이미 지나간 대사는 다시 울리지 않게 미리 표시 */
-  for(const c of cues) if(c.l.e<=start) fired.add(c.l.id);
+  for(const c of cues) if(endOf(c)<=start) fired.add(c.l.id);
 
   mixMode=true;
   vid.playbackRate=1;
@@ -1734,18 +1743,17 @@ async function playMix(from){
 
   /* 옮긴 자리가 어떤 대사 한가운데라면, 그 대사도 중간부터 같이 틀어 준다 */
   for(const c of cues){
-    if(start>c.l.s && start<c.l.e){
+    if(start>atOf(c) && start<endOf(c)){
       fired.add(c.l.id);
       try{
-        const old=players.get(c.l.id);
-        if(old){ try{old.pause()}catch(_){ } }
-        const a=voiceAudio(c.url);
-        players.set(c.l.id,a); mixPlaying.push(a);
-        /* 되감기를 못 하는 파일이면 그냥 처음부터 튼다 (조금 늦게 시작할 뿐) */
-        a.addEventListener("loadedmetadata",()=>{
-          try{ a.currentTime=Math.max(0,start-c.l.s) }catch(_){ }
-        },{once:true});
-        a.play().catch(()=>{});
+        const bf=bufs.get(c.l.id);
+        if(bf){
+          const off=Math.max(0,Math.min(bf.duration-0.05,start-atOf(c)));
+          const src=mixCtx.createBufferSource(); src.buffer=bf;
+          const g=mixCtx.createGain(); g.gain.value=dbToMul(gainOf(c.l.id));
+          src.connect(g).connect(mixCtx.destination); src.start(0,off);
+          mixPlaying.push({pause(){ try{src.stop()}catch(e){} }});
+        }
       }catch(e){}
     }
   }
@@ -1757,16 +1765,12 @@ async function playMix(from){
   run({end:F.end,tick:t=>{
     showNow(t); bgmSync(t);
     for(const c of cues){
-      if(!fired.has(c.l.id)&&t>=c.l.s&&t<c.l.s+.35){
+      const at=atOf(c);
+      if(!fired.has(c.l.id)&&t>=at&&t<at+.35){
         fired.add(c.l.id);
-        /* 녹음기로 만든 webm 은 길이·되감기 정보가 없어서, 한 번 재생된 요소를
-           currentTime=0 으로 되감으면 깨진 소리가 난다. 되감지 말고 새로 만들어 튼다. */
         try{
-          const old=players.get(c.l.id);
-          if(old){ try{old.pause()}catch(_){ } }
-          const a=voiceAudio(c.url);
-          players.set(c.l.id,a); mixPlaying.push(a);
-          a.play().catch(()=>{});
+          const bf=bufs.get(c.l.id);
+          if(bf) mixPlaying.push(playBuffer(bf, dbToMul(gainOf(c.l.id))));
         }catch(e){ console.warn("목소리 재생 실패",c.l.id,e) }
         /* 원본 소리를 틀어둔 상태면 그 대사 동안만 원본을 죽여 겹치지 않게 */
         if($("#dMon").value==="orig"){
@@ -2283,6 +2287,41 @@ function mkLineGain(l,s,after){
              b("↺",()=>save(0),"0 으로"));
   paint();
   return box;
+}
+
+/* ===== 더빙 들어보기용 목소리 버퍼 =====
+   <audio> 태그로 틀면 기기·파일에 따라 깨지는 경우가 있어서,
+   편집 페이지와 똑같이 Web Audio 로 풀어서 쓴다.
+   자르기·음질 보정까지 미리 입혀 두고, 볼륨은 틀 때 건다.
+   설정이 바뀌면 열쇠가 달라져 자동으로 다시 만든다. */
+let mixCtx=null;
+const mixBufs=new Map();
+function mixKey(url,row){
+  const r=row||{};
+  return `${url}|${+r.trim_s||0}|${+r.trim_e||0}|${+r.clean||0}`;
+}
+async function voiceBuffer(l,url){
+  const row=subs.find(x=>x.line_id===l.id);
+  const key=mixKey(url,row);
+  if(mixBufs.has(key))return mixBufs.get(key);
+  mixCtx=mixCtx||new (window.AudioContext||webkitAudioContext)();
+  if(mixCtx.state==="suspended")await mixCtx.resume().catch(()=>{});
+  let buf=await mixCtx.decodeAudioData(await (await fetch(url)).arrayBuffer());
+  if(row){
+    buf=trimBuffer(buf,row.trim_s,row.trim_e);
+    const lv=Math.max(0,Math.min(3,+row.clean||0));
+    if(lv)buf=await cleanBuffer(buf,lv);
+  }
+  mixBufs.set(key,buf);
+  return buf;
+}
+/* 틀기 — 멈출 수 있도록 pause() 를 가진 껍데기를 돌려준다 (stopAll 이 그대로 쓴다) */
+function playBuffer(buf,gainMul){
+  const src=mixCtx.createBufferSource(); src.buffer=buf;
+  const g=mixCtx.createGain(); g.gain.value=gainMul;
+  src.connect(g).connect(mixCtx.destination);
+  src.start();
+  return {pause(){ try{src.stop()}catch(e){} try{src.disconnect()}catch(e){} }};
 }
 
 /* ===== 겹침 자동 정리 =====
