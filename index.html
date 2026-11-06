@@ -557,6 +557,8 @@ tr.justin td{animation:flashin 2.4s ease-out}
       <button class="btn sm" id="aTE">🎬 전체 편집</button>
       <button class="btn sm alt" id="aMatch">🎚 목소리 맞추기</button>
       <button class="btn sm alt hide" id="aMatchUndo">↺ 맞추기 되돌리기</button>
+      <button class="btn sm alt hide" id="aCut">✂ 앞뒤 정리</button>
+      <button class="btn sm alt hide" id="aCutUndo">↺ 앞뒤 정리 되돌리기</button>
       <button class="btn sm alt" id="aAuto">✨ 겹침 자동 정리</button>
       <button class="btn sm alt hide" id="aAutoUndo">↺ 자동 정리 되돌리기</button>
       <button class="btn sm alt hide" id="aTime">⏱ 타이밍 맞추기</button>
@@ -2152,6 +2154,8 @@ function drawAdmin(){
     $("#aAutoUndo").classList.toggle("hide", !has);
     const hasM=!!JSON.parse(localStorage.getItem(MKEY())||"null");
     $("#aMatchUndo").classList.toggle("hide", !hasM);
+    const hasC=!!JSON.parse(localStorage.getItem(CUTKEY())||"null");
+    $("#aCutUndo").classList.toggle("hide", !hasC);
   }catch(e){}
   $("#aNote").innerHTML=online
     ? `제출 <b>${subs.length} / ${PROJECT.lines.length}</b> 줄`
@@ -2527,13 +2531,27 @@ function teOpen(){
     link("🎚 목소리 맞추기","#aMatch","크기·잡음·음색을 전원 같은 기준으로"),
     link("↺","#aMatchUndo","맞추기 되돌리기"),
     link("✨ 겹침 자동 정리","#aAuto","앞묵음을 자르고 앞으로 당겨 겹침을 줄인다"),
-    link("↺","#aAutoUndo","겹침 정리 되돌리기"));
+    link("↺","#aAutoUndo","겹침 정리 되돌리기"),
+    link("✂ 앞뒤 정리","#aCut","말이 시작·끝나는 지점을 찾아 앞뒤의 잡음과 묵음을 잘라낸다"),
+    link("↺","#aCutUndo","앞뒤 정리 되돌리기"));
 
   $("#teClose").onclick=teClose;
   $("#tePlay").onclick=()=>TE.playing?teStop():tePlay();
   $("#teZi").onclick=()=>{const i=TE_ZOOMS.indexOf(TE.px); TE.px=TE_ZOOMS[Math.min(TE_ZOOMS.length-1,i+1)]; teDraw()};
   $("#teZo").onclick=()=>{const i=TE_ZOOMS.indexOf(TE.px); TE.px=TE_ZOOMS[Math.max(0,i-1)]; teDraw()};
   teDraw(); teTick();
+
+  /* 열자마자 목소리를 미리 풀어 둔다 — 재생을 누를 때 기다리지 않도록 */
+  (async()=>{
+    const items=teLanes().flatMap(([,v])=>v);
+    for(let i=0;i<items.length;i++){
+      if(!TE||!$("#teWrap"))return;
+      const it=items[i];
+      try{ await voiceBuffer(it.l, pub(it.s.path)) }catch(e){}
+      const b=$("#tePlay");
+      if(b && !TE.playing) b.textContent = i+1<items.length ? `▶ 재생 (준비 ${i+1}/${items.length})` : "▶ 재생";
+    }
+  })();
 
   /* 키보드 — 편집기가 열려 있을 때만 */
   TE.keys=ev=>{
@@ -2630,8 +2648,7 @@ function teSub(t){
   if(el.dataset.id===String(l.id))return;
   el.dataset.id=String(l.id);
   const c=chOf(l.char);
-  el.innerHTML=`<span><b style="color:${c.color}">${esc(l.char)}</b> ${esc(l.text)}`
-             + (l.trans?`<em>${esc(l.trans)}</em>`:"") + `</span>`;
+  el.innerHTML=`<span><b style="color:${c.color}">${esc(l.char)}</b> ${esc(l.text)}</span>`;
 }
 function teTick(){
   if(!TE)return;
@@ -2752,6 +2769,9 @@ async function teSeek(t){
 async function tePlay(){
   if(!TE)return;
   teStop();
+  /* 목소리를 푸는 데 시간이 걸리면 '누른 지 오래' 가 되어 브라우저가 재생을 막는다.
+     누른 직후에 한 번 틀었다 멈춰서 재생 권한을 먼저 확보해 둔다. */
+  try{ await TE.vid.play(); TE.vid.pause(); }catch(e){}
   TE.ctx=TE.ctx||new (window.AudioContext||webkitAudioContext)();
   if(TE.ctx.state==="suspended")await TE.ctx.resume().catch(()=>{});
   const t0=TE.vid.currentTime;
@@ -2767,7 +2787,14 @@ async function tePlay(){
   }
   $("#tePlay").textContent="■ 멈춤";
 
-  await TE.vid.play().catch(()=>{});
+  let 막힘=null;
+  await TE.vid.play().catch(e=>{막힘=e.name});
+  if(막힘 || TE.vid.paused){
+    $("#tePlay").textContent="▶ 재생";
+    $("#teSel").innerHTML=`<b style="color:var(--rec)">영상을 재생하지 못했습니다</b>
+      — 한 번 더 눌러 주세요. (브라우저가 자동 재생을 막는 경우가 있습니다)`;
+    TE.playing=false; return;
+  }
   if(TE.bed){ TE.bed.currentTime=TE.vid.currentTime; TE.bed.play().catch(()=>{}) }
   const base=TE.ctx.currentTime;
   for(const it of items){
@@ -2889,6 +2916,127 @@ function playBuffer(buf,gainMul){
   src.start();
   return {pause(){ try{src.stop()}catch(e){} try{src.disconnect()}catch(e){} }};
 }
+
+/* ===== 녹음 앞의 잡음 잘라내기 =====
+   "지지직" 같은 잡음은 소리가 있으므로 '무음 자르기' 로는 안 잘린다.
+   말소리와 잡음은 파형이 0을 넘나드는 횟수(영교차율)가 크게 다르다 —
+   잡음은 초당 수없이 넘나들고, 사람 목소리는 훨씬 완만하다. 그걸로 구분한다. */
+const CUTKEY=()=>`dubroom:cut:${PROJECT.key}`;
+
+function speechOnset(buf){
+  const d=buf.getChannelData(0), sr=buf.sampleRate;
+  const W=Math.round(0.03*sr), n=Math.floor(d.length/W);
+  if(n<5)return 0;
+  const en=new Float32Array(n), zc=new Float32Array(n);
+  for(let f=0;f<n;f++){
+    let e=0,z=0; const a0=f*W, a1=a0+W;
+    for(let i=a0;i<a1;i++){
+      e+=d[i]*d[i];
+      if(i>a0 && ((d[i]>=0)!==(d[i-1]>=0))) z++;
+    }
+    en[f]=Math.sqrt(e/W); zc[f]=z/W;
+  }
+  let mx=0; for(const v of en) if(v>mx) mx=v;
+  if(mx<0.004)return 0;
+  const thr=Math.max(mx*0.12,0.005);
+  /* 소리가 충분히 크고 + 영교차가 적은(=목소리) 상태가 90ms 이어지는 첫 지점 */
+  for(let f=0;f+2<n;f++){
+    if(en[f]>thr&&zc[f]<0.25 && en[f+1]>thr&&zc[f+1]<0.25 && en[f+2]>thr&&zc[f+2]<0.25)
+      return Math.max(0, f*W/sr - 0.04);     // 숨소리 조금 남긴다
+  }
+  return 0;
+}
+
+/* 말소리가 실제로 끝나는 지점 — 뒤에 붙은 묵음·잡음을 잘라내기 위해 */
+function speechEnd(buf){
+  const d=buf.getChannelData(0), sr=buf.sampleRate;
+  const W=Math.round(0.03*sr), n=Math.floor(d.length/W);
+  if(n<5)return buf.duration;
+  const en=new Float32Array(n), zc=new Float32Array(n);
+  for(let f=0;f<n;f++){
+    let e=0,z=0; const a0=f*W,a1=a0+W;
+    for(let i=a0;i<a1;i++){ e+=d[i]*d[i];
+      if(i>a0&&((d[i]>=0)!==(d[i-1]>=0)))z++; }
+    en[f]=Math.sqrt(e/W); zc[f]=z/W;
+  }
+  let mx=0; for(const v of en) if(v>mx) mx=v;
+  if(mx<0.004)return buf.duration;
+  const thr=Math.max(mx*0.12,0.005);
+  for(let f=n-1;f>=2;f--){
+    if(en[f]>thr&&zc[f]<0.25 && en[f-1]>thr&&zc[f-1]<0.25)
+      return Math.min(buf.duration,(f+1)*W/sr + 0.15);   // 여운 조금 남긴다
+  }
+  return buf.duration;
+}
+
+$("#aCut").onclick=async()=>{
+  const b=$("#aCut"); b.disabled=true;
+  try{
+    const items=PROJECT.lines.map(l=>({l,s:subs.find(x=>x.line_id===l.id)})).filter(x=>x.s);
+    if(!items.length)throw new Error("제출된 녹음이 없습니다.");
+    const snap=items.map(x=>({id:x.s.id,line_id:x.l.id,
+      trim_s:+x.s.trim_s||0, trim_e:+x.s.trim_e||0, offset_ms:+x.s.offset_ms||0}));
+
+    const found=[];
+    for(let i=0;i<items.length;i++){
+      const it=items[i];
+      prog(i/items.length*80,`앞부분을 살펴보는 중… ${i+1} / ${items.length}`);
+      let buf;
+      try{
+        const ctx=new (window.AudioContext||webkitAudioContext)();
+        buf=await ctx.decodeAudioData(await (await fetch(pub(it.s.path))).arrayBuffer());
+        try{ctx.close()}catch(e){}
+      }catch(e){ continue }
+      const on=speechOnset(buf);
+      const off=speechEnd(buf);
+      const tailCut=Math.max(0, buf.duration-off);
+      if(on>0.06 || tailCut>0.12)
+        found.push({it, on:+on.toFixed(2), te:+tailCut.toFixed(2)});
+    }
+
+    if(!found.length){ progDone("앞에 잘라낼 잡음이 있는 녹음은 없었습니다."); b.disabled=false; return }
+
+    prog(88,"잘라내는 중…");
+    for(const f of found){
+      /* 앞은 싱크도 같이 보정(목소리가 제자리에), 뒤는 보정 불필요 */
+      const patch=trimPatch(f.it.s, f.on, f.te);
+      const {error}=await sb.from("submissions").update(patch).eq("id",f.it.s.id);
+      if(error){ prog(0,`<b style="color:var(--rec)">저장 실패: ${esc(error.message)}</b>`); b.disabled=false; return }
+      Object.assign(f.it.s,patch);
+    }
+    try{ localStorage.setItem(CUTKEY(), JSON.stringify(snap)) }catch(e){}
+    $("#aCutUndo").classList.remove("hide");
+    mixBufs.clear(); drawAdmin();
+    const 앞=found.filter(f=>f.on>0.06).length, 뒤=found.filter(f=>f.te>0.12).length;
+    progDone(`<b>${found.length}줄</b>을 정리했습니다 — 앞 ${앞}줄 / 뒤 ${뒤}줄.<br>`
+      + found.slice(0,6).map(f=>`${f.it.l.id}번 앞${f.on.toFixed(2)}s·뒤${f.te.toFixed(2)}s`).join(", ")
+      + (found.length>6?" …":"")
+      + `<br>목소리 위치는 그대로 유지되도록 싱크도 같이 맞췄습니다.
+         마음에 안 들면 <b>↺ 되돌리기</b>.`);
+  }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
+  b.disabled=false;
+};
+
+$("#aCutUndo").onclick=async()=>{
+  const b=$("#aCutUndo"); b.disabled=true;
+  try{
+    const snap=JSON.parse(localStorage.getItem(CUTKEY())||"null");
+    if(!snap||!snap.length)throw new Error("되돌릴 기록이 없습니다.");
+    for(let i=0;i<snap.length;i++){
+      prog(i/snap.length*95,`되돌리는 중… ${i+1} / ${snap.length}`);
+      const o=snap[i];
+      const {error}=await sb.from("submissions")
+        .update({trim_s:o.trim_s, trim_e:o.trim_e, offset_ms:o.offset_ms}).eq("id",o.id);
+      if(error)throw error;
+      const cur=subs.find(x=>x.line_id===o.line_id);
+      if(cur){cur.trim_s=o.trim_s; cur.trim_e=o.trim_e; cur.offset_ms=o.offset_ms}
+    }
+    try{ localStorage.removeItem(CUTKEY()) }catch(e){}
+    b.classList.add("hide"); mixBufs.clear(); drawAdmin();
+    progDone(`${snap.length}줄을 되돌렸습니다.`);
+  }catch(e){ prog(0,`<b style="color:var(--rec)">되돌리기 실패: ${esc(e.message||e)}</b>`) }
+  b.disabled=false;
+};
 
 /* ===== 목소리 맞추기 =====
    코치님마다 마이크·방이 다른 것을 "같은 자리에서 녹음한 것처럼" 가깝게 만든다.
