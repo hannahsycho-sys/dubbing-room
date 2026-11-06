@@ -29,6 +29,10 @@ const PROJECT = {
     // 코치님들이 애니보다 천천히 말해서 뒤가 잘리면 이 값을 키우세요.
     recTail:     1.2,
 
+    // 목소리가 "쾅" 들어오고 "뚝" 끊기지 않게 양끝을 부드럽게 (초)
+    voiceFadeIn:  0.030,
+    voiceFadeOut: 0.045,
+
 
     // 음악 — warm(따뜻한 피아노) / cinema(영화 오프닝) / calm(잔잔한 앰비언트)
     titleMusic:      "warm",

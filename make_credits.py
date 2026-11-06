@@ -84,6 +84,7 @@ def fetch_notes(key):
                             "eq_low": float(r.get("eq_low") or 0),
                             "eq_mid": float(r.get("eq_mid") or 0),
                             "eq_high": float(r.get("eq_high") or 0),
+                            "speed": float(r.get("speed") or 1),
                             "url": f"{url}/storage/v1/object/public/{bucket}/{r['path']}"}
     print(f"  소감 {len(out)}개 받음")
     return out

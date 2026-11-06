@@ -55,6 +55,8 @@ def mixval(key, default):
 BGM_VOL   = mixval("bgmVolume",   0.9)
 VOICE_VOL = mixval("voiceVolume", 1.25)
 TITLE_SEC = mixval("titleSec",    4.0)
+V_FADE_I  = mixval("voiceFadeIn",  0.030)
+V_FADE_O  = mixval("voiceFadeOut", 0.045)
 FADE_IN   = mixval("fadeIn",      0.8)
 FADE_OUT  = mixval("fadeOut",     2.6)
 
@@ -149,6 +151,14 @@ def trim_of(row):
     return f + ",asetpts=PTS-STARTPTS,"
 
 
+def speed_of(row):
+    """말 속도 — atempo 는 음높이를 그대로 두고 빠르기만 바꾼다."""
+    try: v = float(row.get("speed") or 1)
+    except (TypeError, ValueError): return ""
+    v = max(0.5, min(2.0, v))
+    return f"atempo={v:.3f}," if abs(v - 1) > 0.005 else ""
+
+
 def eq_of(row):
     """사람마다 다른 마이크 음색을 비슷하게 맞추는 3밴드 보정."""
     try:
@@ -198,16 +208,20 @@ for i, l in enumerate([l for l in have if l["id"] in files], start=1):
     cfil_ = clean_of(latest[l["id"]])
     tfil_ = trim_of(latest[l["id"]])
     efil_ = eq_of(latest[l["id"]])
+    sfil_ = speed_of(latest[l["id"]])
     # 따로 녹음한 목소리를 자연스럽게 잇기 :
     #   앞 묵음 제거 → 음량 평준화 → 양끝 짧은 페이드 → 제자리로 밀기
     filt.append(
         f"[{i}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
         f"{tfil_}"
+        f"{sfil_}"
         f"silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.025:detection=peak,"
         f"{cfil_}"
         f"{efil_}"
         f"loudnorm=I=-20:TP=-2.0:LRA=11,"
-        f"afade=t=in:st=0:d=0.015,"
+        # 양끝을 부드럽게 — 끝쪽은 길이를 몰라도 되게 뒤집어서 페이드한다
+        f"afade=t=in:st=0:d={V_FADE_I:.3f},"
+        f"areverse,afade=t=in:st=0:d={V_FADE_O:.3f},areverse,"
         f"{gfil}"
         f"volume={VOICE_VOL},"
         f"adelay={d}|{d}[v{i}]")
@@ -331,9 +345,10 @@ else:
         ngf = f"volume={ng:+.1f}dB," if abs(ng) > 0.05 else ""
         ncl = clean_of(nv_)
         neq = eq_of(nv_)
+        nsp = speed_of(nv_)
         ntr = trim_of(dict(nv_, dur=n.get("dur") or nv_.get("dur") or 0))
         cfil.append(f"[{ai}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
-                    f"{ntr}{ncl}{neq}loudnorm=I=-18:TP=-2.0:LRA=11,{ngf}adelay={dly}|{dly}[n{ai}]")
+                    f"{ntr}{nsp}{ncl}{neq}loudnorm=I=-18:TP=-2.0:LRA=11,{ngf}adelay={dly}|{dly}[n{ai}]")
         amix_in.append(f"[n{ai}]"); ai += 1
 
     c_audio = os.path.join(tmp, "credits_audio.wav")
