@@ -583,7 +583,7 @@ tr.justin td{animation:flashin 2.4s ease-out}
          마음에 들면 아래 문구를 <code>segments.js</code> 의 <code>mix</code> 에 적으면 최종 영상에도 적용됩니다.</p>
       <div class="balrow">
         <span>배경음악</span>
-        <input type="range" id="balBgm" min="0" max="250" value="90">
+        <input type="range" id="balBgm" min="0" max="1200" value="90">
         <span class="mono" id="balBgmV">0.90</span>
       </div>
       <div class="balrow">
@@ -2541,6 +2541,8 @@ function teOpen(){
           <span class="mono" id="teTime" style="color:var(--amber);min-width:62px">0:00.0</span>
           <label class="sw" style="font-size:12px;color:var(--dim)" title="목소리만 집중해서 들을 때 끄세요">
             <input type="checkbox" id="teBed" checked> 배경음악</label>
+          <label class="sw" style="font-size:12px;color:var(--dim)" title="끄면 배경음악만 들립니다 — 음악 크기를 맞출 때 쓰세요">
+            <input type="checkbox" id="teVoiceOn" checked> 목소리</label>
           <span class="gap" style="flex:1"></span>
           <span style="font-size:12px;color:var(--dim)">확대</span>
           <button class="mini" id="teZo">－</button><button class="mini" id="teZi">＋</button>
@@ -2549,12 +2551,13 @@ function teOpen(){
         </div>
         <div class="tectl tebal" style="margin-top:7px">
           <span title="영상에 깔리는 음악 크기">🎵 배경음악</span>
-          <input type="range" id="teBalBgm" min="0" max="250" value="90">
+          <input type="range" id="teBalBgm" min="0" max="1200" value="90">
           <span class="mono" id="teBalBgmV" style="min-width:34px">0.90</span>
           <span title="코치님들 목소리 크기">🎙 목소리</span>
           <input type="range" id="teBalVoice" min="0" max="250" value="125">
           <span class="mono" id="teBalVoiceV" style="min-width:34px">1.25</span>
           <button class="mini" id="teBalReset" title="segments.js 의 기본값으로">↺</button>
+          <span id="teBalInfo" style="font-size:11.5px;color:var(--dim)"></span>
         </div>
       </div>
       <div>
@@ -2581,7 +2584,8 @@ function teOpen(){
   host.before(w);
 
   TE={vid:$("#teVid"), px:40, srcs:[], raf:0, playing:false, sel:null, ctx:null,
-      bufs:new Map(), bedOn:true, voiceBus:null, bedGain:null, bedSrcTried:false};
+      bufs:new Map(), bedOn:true, voiceOn:true, bedRms:null,
+      voiceBus:null, bedGain:null, master:null, bedSrcTried:false};
   TE.vid.src=PROJECT.video;
   TE.vid.muted=!!PROJECT.videoBgm;
   TE.bed=PROJECT.videoBgm?Object.assign(new Audio(PROJECT.videoBgm),{preload:"auto"}):null;
@@ -2645,6 +2649,8 @@ function teOpen(){
     el.oninput=e2=>{ balance[key]=+e2.target.value/100; paintBalance() };
   };
   bal("#teBalBgm","bgm"); bal("#teBalVoice","voice");
+  $("#teVoiceOn").onchange=e2=>{ TE.voiceOn=e2.target.checked; teApplyBalance() };
+  teBedLevel().then(()=>paintBalance());
   $("#teBalReset").onclick=()=>{ balance={...MIXDEF}; paintBalance() };
   paintBalance();
 
@@ -2927,11 +2933,18 @@ async function tePlay(){
   if(TE.ctx.state==="suspended")await TE.ctx.resume().catch(()=>{});
 
   /* 목소리는 전부 이 하나를 거쳐 나간다 — 슬라이더를 움직이면 듣는 중에도 바로 바뀐다 */
+  if(!TE.master){
+    /* 합본과 똑같이, 커질 때만 부드럽게 눌러 주는 마지막 단계 */
+    TE.master=TE.ctx.createDynamicsCompressor();
+    TE.master.threshold.value=-3; TE.master.knee.value=6; TE.master.ratio.value=12;
+    TE.master.attack.value=0.003; TE.master.release.value=0.12;
+    TE.master.connect(TE.ctx.destination);
+  }
   if(!TE.voiceBus){
     TE.voiceBus=TE.ctx.createGain();
-    TE.voiceBus.connect(TE.ctx.destination);
+    TE.voiceBus.connect(TE.master);
   }
-  TE.voiceBus.gain.value=balance.voice;
+  TE.voiceBus.gain.value=(TE.voiceOn===false?0:balance.voice);
 
   /* 배경음악도 같은 기준으로. <audio> 는 1 배를 넘길 수 없어서 Web Audio 로 받는다.
      (한 element 당 한 번만 되므로 TE 한 판에 한 번만 만든다) */
@@ -2940,7 +2953,7 @@ async function tePlay(){
     try{
       const ms=TE.ctx.createMediaElementSource(TE.bed);
       TE.bedGain=TE.ctx.createGain();
-      ms.connect(TE.bedGain).connect(TE.ctx.destination);
+      ms.connect(TE.bedGain).connect(TE.master);
     }catch(e){
       console.warn("배경음악을 Web Audio 로 못 받았습니다 — 음량만 조절합니다",e);
       TE.bedGain=null;
@@ -4168,15 +4181,45 @@ function paintBalance(){
   txt("#balCode", same
     ? "segments.js 의 값과 같습니다"
     : `bgmVolume: ${balance.bgm.toFixed(2)},  voiceVolume: ${balance.voice.toFixed(2)},`);
+  /* 지금 음악이 목소리보다 얼마나 작은지 숫자로 보여 준다 */
+  const info=$("#teBalInfo");
+  if(info&&TE&&TE.bedRms){
+    const 음악=toDb(TE.bedRms*balance.bgm);
+    const 목소리=toDb(TARGET_RMS*balance.voice);
+    const 차=Math.round(음악-목소리);
+    info.innerHTML = `음악 ${음악.toFixed(0)}dB · 목소리 ${목소리.toFixed(0)}dB — `
+      + (차<-26 ? `<b style="color:var(--rec)">${-차}dB 작아 거의 안 들립니다</b>`
+        : 차<-18 ? `<b style="color:var(--amber)">${-차}dB 작아 아주 희미합니다</b>`
+        : 차<-6  ? `목소리 아래에 ${-차}dB 로 깔립니다`
+                 : `<b style="color:var(--amber)">음악이 목소리를 덮습니다</b>`);
+  } else if(info) info.textContent="";
   teApplyBalance();                                  // 듣고 있는 중이면 바로 바뀌게
   try{ localStorage.setItem("dubroom:balance",JSON.stringify(balance)) }catch(e){}
 }
 
 /* 전체 편집에서 재생 중인 소리에 균형을 바로 먹인다.
    예전에는 편집 화면 소리와 합본 소리가 서로 달랐다. */
+/* 배경음악 트랙이 실제로 얼마나 큰지 한 번 재 둔다.
+   demucs 로 목소리를 뺀 트랙이라 원본보다 훨씬 작을 수 있는데,
+   그걸 모르면 "슬라이더가 고장났나" 싶게 된다. */
+async function teBedLevel(){
+  if(!TE||TE.bedRms!=null)return TE.bedRms;
+  TE.bedRms=0;
+  if(!PROJECT.videoBgm)return 0;
+  try{
+    const ctx=TE.ctx||new (window.AudioContext||webkitAudioContext)();
+    const buf=await ctx.decodeAudioData(await (await fetch(PROJECT.videoBgm)).arrayBuffer());
+    const d=buf.getChannelData(0); let sum=0,n=0;
+    for(let i=0;i<d.length;i+=7){sum+=d[i]*d[i];n++}
+    if(TE)TE.bedRms=Math.sqrt(sum/Math.max(1,n));
+  }catch(e){ console.warn("배경음악 세기를 못 쟀습니다",e) }
+  return TE?TE.bedRms:0;
+}
+const toDb=v=>20*Math.log10(Math.max(v,1e-7));
+
 function teApplyBalance(){
   if(!TE)return;
-  if(TE.voiceBus){ try{TE.voiceBus.gain.value=balance.voice}catch(e){} }
+  if(TE.voiceBus){ try{TE.voiceBus.gain.value=(TE.voiceOn===false?0:balance.voice)}catch(e){} }
   if(TE.bedGain){
     /* 게인으로 조절하므로 element 쪽은 1 로 되돌린다 — 안 그러면 두 번 줄어든다 */
     try{TE.bedGain.gain.value=balance.bgm; TE.bed.volume=1}catch(e){}
@@ -4256,7 +4299,11 @@ function wav(buf){
   d.setUint32(24,sr,true);d.setUint32(28,sr*ch*2,true);d.setUint16(32,ch*2,true);
   d.setUint16(34,16,true);W(36,"data");d.setUint32(40,n*ch*2,true);
   const C=Array.from({length:ch},(_,c)=>buf.getChannelData(c));let o=44;
-  for(let i=0;i<n;i++)for(let c=0;c<ch;c++){const v=Math.max(-1,Math.min(1,C[c][i]));
+  /* 배경음악을 많이 키우면 합이 1 을 넘는다. 예전처럼 딱 잘라 버리면
+     '지직' 하고 깨지므로, 0.8 위부터만 부드럽게 눌러 준다. */
+  const soft=v=>{const a=Math.abs(v);
+    return a<0.8 ? v : Math.sign(v)*(0.8+0.19*Math.tanh((a-0.8)/0.19));};
+  for(let i=0;i<n;i++)for(let c=0;c<ch;c++){const v=soft(C[c][i]);
     d.setInt16(o,v<0?v*0x8000:v*0x7fff,true);o+=2}
   return d.buffer;
 }
