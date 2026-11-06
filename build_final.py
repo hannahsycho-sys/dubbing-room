@@ -55,6 +55,7 @@ def mixval(key, default):
 BGM_VOL   = mixval("bgmVolume",   0.9)
 VOICE_VOL = mixval("voiceVolume", 1.25)
 TITLE_SEC = mixval("titleSec",    4.0)
+NORM_AMT  = max(0.0, min(1.0, mixval("normalizeAmount", 0.5)))
 V_FADE_I  = mixval("voiceFadeIn",  0.030)
 V_FADE_O  = mixval("voiceFadeOut", 0.045)
 FADE_IN   = mixval("fadeIn",      0.8)
@@ -151,6 +152,35 @@ def trim_of(row):
     return f + ",asetpts=PTS-STARTPTS,"
 
 
+def measure_lufs(path, pre=""):
+    """녹음의 실제 음량(LUFS)을 잰다. 못 재면 None."""
+    cmd = [FF, "-hide_banner", "-nostats", "-i", path, "-af",
+           f"{pre}loudnorm=I=-20:TP=-2.0:LRA=11:print_format=json", "-f", "null", "-"]
+    out = subprocess.run(cmd, capture_output=True, text=True).stderr
+    m = re.findall(r'"input_i"\s*:\s*"(-?[\d.]+)"', out)
+    try:
+        return float(m[-1]) if m else None
+    except (ValueError, IndexError):
+        return None
+
+
+def level_filter(path, pre=""):
+    """음량 맞추기.
+       NORM_AMT 가 1 이면 ffmpeg loudnorm 으로 완전히 맞추고,
+       그보다 작으면 실제 음량을 재서 '그만큼만' 끌어올린다.
+       전부 같은 크기로 만들면 속삭이는 대사도 외치는 대사만큼 커져 툭툭 튄다. """
+    if NORM_AMT >= 0.99:
+        return "loudnorm=I=-20:TP=-2.0:LRA=11,"
+    if NORM_AMT <= 0.01:
+        return ""
+    cur = measure_lufs(path, pre)
+    if cur is None:
+        return "loudnorm=I=-20:TP=-2.0:LRA=11,"
+    delta = (-20.0 - cur) * NORM_AMT
+    delta = max(-12.0, min(12.0, delta))
+    return f"volume={delta:+.2f}dB," if abs(delta) > 0.05 else ""
+
+
 def speed_of(row):
     """말 속도 — atempo 는 음높이를 그대로 두고 빠르기만 바꾼다."""
     try: v = float(row.get("speed") or 1)
@@ -218,7 +248,7 @@ for i, l in enumerate([l for l in have if l["id"] in files], start=1):
         f"silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.025:detection=peak,"
         f"{cfil_}"
         f"{efil_}"
-        f"loudnorm=I=-20:TP=-2.0:LRA=11,"
+        f"{level_filter(files[l['id']], tfil_ + sfil_)}"
         # 양끝을 부드럽게 — 끝쪽은 길이를 몰라도 되게 뒤집어서 페이드한다
         f"afade=t=in:st=0:d={V_FADE_I:.3f},"
         f"areverse,afade=t=in:st=0:d={V_FADE_O:.3f},areverse,"
@@ -348,7 +378,7 @@ else:
         nsp = speed_of(nv_)
         ntr = trim_of(dict(nv_, dur=n.get("dur") or nv_.get("dur") or 0))
         cfil.append(f"[{ai}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
-                    f"{ntr}{nsp}{ncl}{neq}loudnorm=I=-18:TP=-2.0:LRA=11,{ngf}adelay={dly}|{dly}[n{ai}]")
+                    f"{ntr}{nsp}{ncl}{neq}{level_filter(f, ntr+nsp)}{ngf}adelay={dly}|{dly}[n{ai}]")
         amix_in.append(f"[n{ai}]"); ai += 1
 
     c_audio = os.path.join(tmp, "credits_audio.wav")

@@ -33,6 +33,12 @@ const PROJECT = {
     voiceFadeIn:  0.030,
     voiceFadeOut: 0.045,
 
+    // 사람마다 다른 목소리 크기를 얼마나 맞출지.
+    //   1.0 = 전부 같은 크기로 (강약이 사라진다)
+    //   0.5 = 절반만  (원래 강약을 살리면서 차이는 줄인다)
+    //   0   = 손대지 않음
+    normalizeAmount: 0.5,
+
 
     // 음악 — warm(따뜻한 피아노) / cinema(영화 오프닝) / calm(잔잔한 앰비언트)
     titleMusic:      "warm",
