@@ -188,6 +188,9 @@ tr.editrow>td{background:var(--panel2);border-top:0;padding:14px 16px 16px}
 .tebox{border:1px solid var(--line);border-radius:8px;background:var(--panel);
   padding:14px;margin:0 0 16px}
 .tetop{display:grid;grid-template-columns:minmax(380px,46%) 1fr;gap:18px;align-items:start}
+.tebal{gap:8px;font-size:12px;color:var(--dim)}
+.tebal input[type=range]{width:104px;accent-color:var(--amber)}
+.tebal .mono{color:var(--amber)}
 .tegrp{display:flex;align-items:center;gap:7px;flex-wrap:wrap;
   border:1px solid var(--line);border-radius:6px;padding:7px 10px}
 .tegrp>b{font-size:11.5px;color:var(--dim);font-weight:400;margin-right:2px}
@@ -2538,10 +2541,20 @@ function teOpen(){
           <span class="mono" id="teTime" style="color:var(--amber);min-width:62px">0:00.0</span>
           <label class="sw" style="font-size:12px;color:var(--dim)" title="목소리만 집중해서 들을 때 끄세요">
             <input type="checkbox" id="teBed" checked> 배경음악</label>
+          <span class="gap" style="flex:1"></span>
           <span style="font-size:12px;color:var(--dim)">확대</span>
           <button class="mini" id="teZo">－</button><button class="mini" id="teZi">＋</button>
           <span class="gap" style="flex:1"></span>
           <button class="mini" id="teClose">✕ 닫기</button>
+        </div>
+        <div class="tectl tebal" style="margin-top:7px">
+          <span title="영상에 깔리는 음악 크기">🎵 배경음악</span>
+          <input type="range" id="teBalBgm" min="0" max="250" value="90">
+          <span class="mono" id="teBalBgmV" style="min-width:34px">0.90</span>
+          <span title="코치님들 목소리 크기">🎙 목소리</span>
+          <input type="range" id="teBalVoice" min="0" max="250" value="125">
+          <span class="mono" id="teBalVoiceV" style="min-width:34px">1.25</span>
+          <button class="mini" id="teBalReset" title="segments.js 의 기본값으로">↺</button>
         </div>
       </div>
       <div>
@@ -2568,7 +2581,7 @@ function teOpen(){
   host.before(w);
 
   TE={vid:$("#teVid"), px:40, srcs:[], raf:0, playing:false, sel:null, ctx:null,
-      bufs:new Map(), bedOn:true};
+      bufs:new Map(), bedOn:true, voiceBus:null, bedGain:null, bedSrcTried:false};
   TE.vid.src=PROJECT.video;
   TE.vid.muted=!!PROJECT.videoBgm;
   TE.bed=PROJECT.videoBgm?Object.assign(new Audio(PROJECT.videoBgm),{preload:"auto"}):null;
@@ -2626,6 +2639,14 @@ function teOpen(){
   };
   bulk.append(lk);
   teLockInfo(lk);
+
+  const bal=(id,key)=>{
+    const el=$(id);
+    el.oninput=e2=>{ balance[key]=+e2.target.value/100; paintBalance() };
+  };
+  bal("#teBalBgm","bgm"); bal("#teBalVoice","voice");
+  $("#teBalReset").onclick=()=>{ balance={...MIXDEF}; paintBalance() };
+  paintBalance();
 
   $("#teBed").onchange=e=>{
     TE.bedOn=e.target.checked;
@@ -2905,6 +2926,28 @@ async function tePlay(){
   TE.ctx=TE.ctx||new (window.AudioContext||webkitAudioContext)();
   if(TE.ctx.state==="suspended")await TE.ctx.resume().catch(()=>{});
 
+  /* 목소리는 전부 이 하나를 거쳐 나간다 — 슬라이더를 움직이면 듣는 중에도 바로 바뀐다 */
+  if(!TE.voiceBus){
+    TE.voiceBus=TE.ctx.createGain();
+    TE.voiceBus.connect(TE.ctx.destination);
+  }
+  TE.voiceBus.gain.value=balance.voice;
+
+  /* 배경음악도 같은 기준으로. <audio> 는 1 배를 넘길 수 없어서 Web Audio 로 받는다.
+     (한 element 당 한 번만 되므로 TE 한 판에 한 번만 만든다) */
+  if(TE.bed && !TE.bedGain && TE.bedSrcTried!==true){
+    TE.bedSrcTried=true;
+    try{
+      const ms=TE.ctx.createMediaElementSource(TE.bed);
+      TE.bedGain=TE.ctx.createGain();
+      ms.connect(TE.bedGain).connect(TE.ctx.destination);
+    }catch(e){
+      console.warn("배경음악을 Web Audio 로 못 받았습니다 — 음량만 조절합니다",e);
+      TE.bedGain=null;
+    }
+  }
+  teApplyBalance();
+
   /* 영상을 먼저 띄우고, 목소리는 준비되는 대로 끼워 넣는다.
      30개를 다 풀 때까지 기다리면 네트워크가 느릴 때 한참 멈춰 있게 된다. */
   let 막힘=null;
@@ -2935,7 +2978,7 @@ async function tePlay(){
     if(at+buf.duration<=now) continue;              // 이미 지나간 대사
     const src=TE.ctx.createBufferSource(); src.buffer=buf;
     const g=TE.ctx.createGain(); g.gain.value=dbToMul(gainOf(it.l.id));
-    src.connect(g).connect(TE.ctx.destination);
+    src.connect(g).connect(TE.voiceBus);
     const lead=at-now;
     try{
       if(lead>=0) src.start(TE.ctx.currentTime+lead);
@@ -4114,15 +4157,31 @@ const MIXDEF={bgm:(PROJECT.mix?.bgmVolume??0.9), voice:(PROJECT.mix?.voiceVolume
 let balance={...MIXDEF};
 try{ const v=JSON.parse(localStorage.getItem("dubroom:balance")||"null"); if(v)balance=v }catch(e){}
 function paintBalance(){
-  $("#balBgm").value=Math.round(balance.bgm*100);
-  $("#balVoice").value=Math.round(balance.voice*100);
-  $("#balBgmV").textContent=balance.bgm.toFixed(2);
-  $("#balVoiceV").textContent=balance.voice.toFixed(2);
+  const set=(id,v)=>{const el=$(id); if(el)el.value=v};
+  const txt=(id,v)=>{const el=$(id); if(el)el.textContent=v};
+  /* 관리 페이지와 전체 편집, 두 군데 슬라이더가 늘 같은 값을 보이게 한다 */
+  set("#balBgm",Math.round(balance.bgm*100));      set("#teBalBgm",Math.round(balance.bgm*100));
+  set("#balVoice",Math.round(balance.voice*100));  set("#teBalVoice",Math.round(balance.voice*100));
+  txt("#balBgmV",balance.bgm.toFixed(2));          txt("#teBalBgmV",balance.bgm.toFixed(2));
+  txt("#balVoiceV",balance.voice.toFixed(2));      txt("#teBalVoiceV",balance.voice.toFixed(2));
   const same=Math.abs(balance.bgm-MIXDEF.bgm)<0.005&&Math.abs(balance.voice-MIXDEF.voice)<0.005;
-  $("#balCode").textContent = same
+  txt("#balCode", same
     ? "segments.js 의 값과 같습니다"
-    : `bgmVolume: ${balance.bgm.toFixed(2)},  voiceVolume: ${balance.voice.toFixed(2)},`;
+    : `bgmVolume: ${balance.bgm.toFixed(2)},  voiceVolume: ${balance.voice.toFixed(2)},`);
+  teApplyBalance();                                  // 듣고 있는 중이면 바로 바뀌게
   try{ localStorage.setItem("dubroom:balance",JSON.stringify(balance)) }catch(e){}
+}
+
+/* 전체 편집에서 재생 중인 소리에 균형을 바로 먹인다.
+   예전에는 편집 화면 소리와 합본 소리가 서로 달랐다. */
+function teApplyBalance(){
+  if(!TE)return;
+  if(TE.voiceBus){ try{TE.voiceBus.gain.value=balance.voice}catch(e){} }
+  if(TE.bedGain){
+    /* 게인으로 조절하므로 element 쪽은 1 로 되돌린다 — 안 그러면 두 번 줄어든다 */
+    try{TE.bedGain.gain.value=balance.bgm; TE.bed.volume=1}catch(e){}
+  }
+  else if(TE.bed){ try{TE.bed.volume=Math.max(0,Math.min(1,balance.bgm))}catch(e){} }
 }
 $("#balBgm").oninput  =e=>{balance.bgm  =+e.target.value/100; paintBalance()};
 $("#balVoice").oninput=e=>{balance.voice=+e.target.value/100; paintBalance()};
