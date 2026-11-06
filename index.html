@@ -189,6 +189,12 @@ tr.editrow>td{background:var(--panel2);border-top:0;padding:14px 16px 16px}
   padding:14px;margin:0 0 16px}
 .tetop{display:grid;grid-template-columns:420px 1fr;gap:16px;align-items:start}
 @media(max-width:1000px){.tetop{grid-template-columns:1fr}}
+.tevidwrap{position:relative}
+.tesub{position:absolute;left:0;right:0;bottom:10px;text-align:center;padding:0 10px;
+  pointer-events:none}
+.tesub span{display:inline-block;background:rgba(10,10,8,.84);border-radius:5px;
+  padding:6px 11px;font-size:13px;line-height:1.4;max-width:96%}
+.tesub em{display:block;font-style:normal;font-size:11.5px;color:var(--dim);margin-top:3px}
 .tetop video{width:100%;aspect-ratio:16/9;background:#000;border-radius:6px;
   border:1px solid var(--line);display:block}
 .tectl{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
@@ -2131,6 +2137,7 @@ async function openAdmin(){
 }
 function drawAdmin(){
   stopNotePrev();
+  if(typeof TE!=="undefined" && TE && $("#teWrap")) setTimeout(()=>{try{teDraw()}catch(e){}},0);
   try{
     const has=!!JSON.parse(localStorage.getItem(AUTOKEY())||"null");
     $("#aAutoUndo").classList.toggle("hide", !has);
@@ -2366,7 +2373,10 @@ function teOpen(){
   w.innerHTML=`
     <div class="tetop">
       <div>
-        <video id="teVid" playsinline preload="auto"></video>
+        <div class="tevidwrap">
+          <video id="teVid" playsinline preload="auto"></video>
+          <div class="tesub" id="teSub"></div>
+        </div>
         <div class="tectl" style="margin-top:9px">
           <button class="mini" id="tePlay">▶ 재생</button>
           <span class="mono" id="teTime" style="color:var(--amber);min-width:62px">0:00.0</span>
@@ -2377,7 +2387,8 @@ function teOpen(){
         </div>
       </div>
       <div>
-        <div id="teSel" style="font-size:12.5px;color:var(--dim);min-height:22px"></div>
+        <div class="edrow" id="teBulk" style="margin-top:0"></div>
+        <div id="teSel" style="font-size:12.5px;color:var(--dim);min-height:22px;margin-top:12px"></div>
         <div class="edrow" id="teCtl"></div>
       </div>
     </div>
@@ -2390,6 +2401,29 @@ function teOpen(){
   TE.vid.src=PROJECT.video;
   TE.vid.muted=!!PROJECT.videoBgm;
   TE.bed=PROJECT.videoBgm?Object.assign(new Audio(PROJECT.videoBgm),{preload:"auto"}):null;
+
+  /* 일괄 기능은 관리 화면 버튼을 그대로 눌러 쓴다 — 같은 기능을 두 벌 두지 않기 위해서다 */
+  const bulk=$("#teBulk");
+  const link=(txt,id,title)=>{
+    const x=document.createElement("button");
+    x.className="mini"; x.textContent=txt; x.title=title||"";
+    x.onclick=async()=>{
+      const src=$(id); if(!src||src.disabled)return;
+      bulk.querySelectorAll("button").forEach(y=>y.disabled=true);
+      src.click();
+      /* 끝날 때까지 기다렸다가 화면을 새로 그린다 */
+      await new Promise(r=>{const t=setInterval(()=>{ if(!src.disabled){clearInterval(t);r()} },300);
+                            setTimeout(()=>{clearInterval(t);r()},180000)});
+      bulk.querySelectorAll("button").forEach(y=>y.disabled=false);
+      mixBufs.clear(); TE&&teDraw();
+    };
+    return x;
+  };
+  bulk.append(
+    link("🎚 목소리 맞추기","#aMatch","크기·잡음·음색을 전원 같은 기준으로"),
+    link("↺","#aMatchUndo","맞추기 되돌리기"),
+    link("✨ 겹침 자동 정리","#aAuto","앞묵음을 자르고 앞으로 당겨 겹침을 줄인다"),
+    link("↺","#aAutoUndo","겹침 정리 되돌리기"));
 
   $("#teClose").onclick=teClose;
   $("#tePlay").onclick=()=>TE.playing?teStop():tePlay();
@@ -2459,8 +2493,21 @@ function teDraw(){
 
 function teHead(){
   const h=$("#teHead"); if(!h||!TE)return;
-  h.style.left=((TE.vid.currentTime||0)*TE.px)+"px";
-  const t=$("#teTime"); if(t)t.textContent=mmss(TE.vid.currentTime||0);
+  const now=TE.vid.currentTime||0;
+  h.style.left=(now*TE.px)+"px";
+  const t=$("#teTime"); if(t)t.textContent=mmss(now);
+  teSub(now);
+}
+/* 지금 자리의 대사를 영상 위에 띄운다 */
+function teSub(t){
+  const el=$("#teSub"); if(!el)return;
+  const l=PROJECT.lines.find(x=>t>=x.s-0.08 && t<=x.e+0.25);
+  if(!l){ if(el.dataset.id){el.innerHTML="";el.dataset.id=""} return }
+  if(el.dataset.id===String(l.id))return;
+  el.dataset.id=String(l.id);
+  const c=chOf(l.char);
+  el.innerHTML=`<span><b style="color:${c.color}">${esc(l.char)}</b> ${esc(l.text)}`
+             + (l.trans?`<em>${esc(l.trans)}</em>`:"") + `</span>`;
 }
 function teTick(){
   if(!TE)return;
@@ -2473,9 +2520,17 @@ function teTick(){
   TE.raf=requestAnimationFrame(teTick);
 }
 
-function teSelect(it){
+function teSelect(it,noSeek){
   if(!TE)return;
   TE.sel=it;
+  /* 누른 대사의 장면을 영상에 보여 준다 (재생 중이 아닐 때만) */
+  if(!noSeek && !TE.playing){
+    try{ TE.vid.currentTime=Math.max(0,teAt(it)-0.25) }catch(e){}
+    const sc=$("#teScroll");
+    if(sc){ const x=teAt(it)*TE.px;
+      if(x<sc.scrollLeft+40||x>sc.scrollLeft+sc.clientWidth-40) sc.scrollLeft=Math.max(0,x-sc.clientWidth/3); }
+    teHead();
+  }
   $$("#teInner .teblk").forEach(b=>b.classList.remove("sel"));
   const blocks=$$("#teInner .teblk");
   blocks.forEach(b=>{ if(b.textContent.startsWith(it.l.id+" ")) b.classList.add("sel") });
@@ -2566,7 +2621,7 @@ function teDrag(el,it){
                 : m==="L" ? {trim_s:it.s.trim_s} : {trim_e:it.s.trim_e};
     const {error}=await sb.from("submissions").update(patch).eq("id",it.s.id);
     if(error){ $("#aNote").innerHTML=`저장 실패: <b>${esc(error.message)}</b>` }
-    teDraw(); teSelect(it);
+    teDraw(); teSelect(it,true);
   };
   el.addEventListener("pointerup",up);
   el.addEventListener("pointercancel",()=>{mode=null});
