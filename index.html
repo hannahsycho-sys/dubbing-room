@@ -925,10 +925,12 @@ function drawTL(){
   }
 }
 /* 막대의 한 지점부터 영상 끝까지 이어서 재생한다 */
-function goFrom(t){
+function goFrom(t,forceMix){
   /* 연습 모드에서 고른 배속을 그대로 따라간다.
-     (예전에는 1배속으로 되돌려서, 느리게 맞춰 놓고 막대를 옮기면 원속도로 돌아갔다) */
-  const wasMix=mixMode;
+     (예전에는 1배속으로 되돌려서, 느리게 맞춰 놓고 막대를 옮기면 원속도로 돌아갔다)
+     forceMix : 막대를 끌 때는 끌기 시작 시점에 stopAll 이 mixMode 를 지워 버리므로,
+                누른 순간의 상태를 밖에서 받아 쓴다. */
+  const wasMix = (forceMix===undefined) ? mixMode : forceMix;
   stopAll(); vid.playbackRate=rate();
   const F=FULL();
   t=Math.max(F.start,Math.min(F.end-0.1,t));
@@ -950,7 +952,7 @@ $("#tl").onclick=e=>{
 let tlHandled=false;
 (function(){
   const el=$("#tl");
-  let pid=null, moved=false, wasLive=false, sx=0;
+  let pid=null, moved=false, wasLive=false, sx=0, wasMixDown=false;
   const tAt=x=>{ const F=FULL(), r=el.getBoundingClientRect();
     return F.start+Math.max(0,Math.min(1,(x-r.left)/r.width))*(F.end-F.start) };
   const paint=t=>{ const F=FULL();
@@ -959,7 +961,7 @@ let tlHandled=false;
 
   el.addEventListener("pointerdown",e=>{
     if(recording)return;                   /* 녹음 중에는 막대를 잠근다 — 녹음을 끊으면 안 된다 */
-    pid=e.pointerId; moved=false; sx=e.clientX; wasLive=!!job;
+    pid=e.pointerId; moved=false; sx=e.clientX; wasLive=!!job; wasMixDown=mixMode;
     try{el.setPointerCapture(pid)}catch(_){}
   });
   el.addEventListener("pointermove",e=>{
@@ -974,7 +976,7 @@ let tlHandled=false;
     pid=null;
     if(!moved&&!wasLive)return;            /* 멈춘 상태에서 그냥 톡 — 기존 클릭 동작에 맡긴다 */
     mark();
-    goFrom(tAt(e.clientX));
+    goFrom(tAt(e.clientX), wasMixDown);
   };
   el.addEventListener("pointerup",finish);
   el.addEventListener("pointercancel",()=>{pid=null});
