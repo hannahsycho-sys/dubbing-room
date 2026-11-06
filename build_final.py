@@ -53,6 +53,48 @@ def mixval(key, default):
     m = re.search(rf'{key}:\s*([\d.]+)', seg)
     return float(m.group(1)) if m else default
 BGM_VOL   = mixval("bgmVolume",   0.9)
+
+def bgm_ranges():
+    """구간별 배경음악 크기 —  bgmRanges: [[0,11,20], [46,68,12]]
+    관리 페이지의 '구간별 음악' 과 같은 값을 쓰면 들어본 대로 나온다."""
+    m = re.search(r'bgmRanges:\s*\[(.*?)\]\s*,?\s*$', seg, re.M | re.S)
+    if not m:
+        return []
+    out = []
+    for a, b, v in re.findall(r'\[\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\]', m.group(1)):
+        a, b, v = float(a), float(b), float(v)
+        if b > a:
+            out.append((a, b, v))
+    return out
+
+BGM_RANGES = bgm_ranges()
+
+def bgm_filter():
+    """구간마다 크기를 바꾼다. 0.12초에 걸쳐 넘어가 툭 끊기지 않게 한다."""
+    if not BGM_RANGES:
+        return f"volume={BGM_VOL}"
+    # 겹치면 먼저 쓴 것이 이긴다 — 브라우저 쪽 bgmAt() 과 같은 규칙
+    edges = sorted({0.0, DUB_END} | {t for a, b, _ in BGM_RANGES for t in (a, b)})
+    def level(t):
+        for a, b, v in BGM_RANGES:
+            if a <= t < b:
+                return v
+        return BGM_VOL
+    parts, F = [], 0.12
+    for i, t in enumerate(edges):
+        if t >= DUB_END:
+            break
+        v = level(t + 1e-6)
+        nxt = edges[i + 1] if i + 1 < len(edges) else DUB_END
+        if i == 0:
+            parts.append(f"between(t,{t},{max(t, nxt - F)})*{v}")
+        else:
+            # 앞 구간에서 이 구간으로 F초에 걸쳐 건너온다
+            prev = level(t - 1e-6)
+            parts.append(f"between(t,{max(0, t - F)},{t})*({prev}+({v}-{prev})*(t-{max(0, t - F)})/{F})")
+            parts.append(f"between(t,{t},{max(t, nxt - F)})*{v}")
+    expr = "+".join(parts)
+    return f"volume='{expr}':eval=frame"
 VOICE_VOL = mixval("voiceVolume", 1.25)
 TITLE_SEC = mixval("titleSec",    4.0)
 NORM_AMT  = max(0.0, min(1.0, mixval("normalizeAmount", 0.5)))
@@ -224,7 +266,10 @@ if bed:
     ins += ["-i", bed]
 else:
     ins += ["-i", video]        # 원본 소리를 깔개로
-filt.append(f"[0:a]volume={BGM_VOL},aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[bed]")
+filt.append(f"[0:a]{bgm_filter()},aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[bed]")
+if BGM_RANGES:
+    print("  배경음악 구간별 크기: " + ", ".join(f"{a:g}–{b:g}초 {v:g}배" for a, b, v in BGM_RANGES)
+          + f" (그 밖은 {BGM_VOL:g}배)")
 mixn.append("[bed]")
 
 for i, l in enumerate([l for l in have if l["id"] in files], start=1):

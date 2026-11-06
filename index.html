@@ -2559,6 +2559,7 @@ function teOpen(){
           <button class="mini" id="teBalReset" title="segments.js 의 기본값으로">↺</button>
           <span id="teBalInfo" style="font-size:11.5px;color:var(--dim)"></span>
         </div>
+        <div class="tectl tebal" id="teRanges" style="margin-top:6px"></div>
       </div>
       <div>
         <div class="edrow" id="teBulk" style="margin-top:0"></div>
@@ -2651,7 +2652,11 @@ function teOpen(){
   bal("#teBalBgm","bgm"); bal("#teBalVoice","voice");
   $("#teVoiceOn").onchange=e2=>{ TE.voiceOn=e2.target.checked; teApplyBalance() };
   teBedLevel().then(()=>paintBalance());
-  $("#teBalReset").onclick=()=>{ balance={...MIXDEF}; paintBalance() };
+  $("#teBalReset").onclick=()=>{
+    balance={...MIXDEF, ranges:MIXDEF.ranges.map(r=>({...r}))};
+    paintBalance(); teDrawRanges();
+  };
+  teDrawRanges();
   paintBalance();
 
   $("#teBed").onchange=e=>{
@@ -2791,6 +2796,52 @@ function teTick(){
   TE.raf=requestAnimationFrame(teTick);
 }
 
+/* 배경음악을 구간별로 다르게 — "앞의 종소리만 크게" 같은 것 */
+function teDrawRanges(){
+  const box=$("#teRanges"); if(!box)return;
+  box.innerHTML="";
+  const lab=document.createElement("span");
+  lab.textContent="구간별 음악"; lab.title="해당하는 구간에서는 위 배경음악 값 대신 여기 값을 씁니다";
+  box.append(lab);
+
+  (balance.ranges||[]).forEach((r,i)=>{
+    const g=document.createElement("span");
+    g.style.cssText="display:inline-flex;align-items:center;gap:4px;"
+      +"border:1px solid var(--line);border-radius:5px;padding:2px 5px";
+    const num=(v,w,fn,title)=>{
+      const n=document.createElement("input");
+      n.type="number"; n.value=v; n.step="0.1"; n.min="0"; n.title=title;
+      n.style.cssText=`width:${w}px;background:transparent;border:0;color:var(--amber);`
+        +"font:inherit;text-align:right";
+      n.onchange=e=>{ fn(+e.target.value||0); paintBalance(); teDrawRanges() };
+      return n;
+    };
+    g.append(num(r.a,42,v=>r.a=v,"시작 (초)"), Object.assign(document.createElement("span"),{textContent:"–"}),
+             num(r.b,42,v=>r.b=v,"끝 (초)"),  Object.assign(document.createElement("span"),{textContent:"초"}),
+             num(r.v,38,v=>r.v=v,"이 구간의 배경음악 배수"), Object.assign(document.createElement("span"),{textContent:"배"}));
+    const x=document.createElement("button");
+    x.className="mini"; x.textContent="✕"; x.title="이 구간 지우기";
+    x.onclick=()=>{ balance.ranges.splice(i,1); paintBalance(); teDrawRanges() };
+    g.append(x); box.append(g);
+  });
+
+  const add=document.createElement("button");
+  add.className="mini"; add.textContent="＋ 구간 추가";
+  add.title="지금 보고 있는 자리부터 5초간을 구간으로 넣습니다";
+  add.onclick=()=>{
+    const t=Math.max(0,Math.round((TE?.vid?.currentTime||0)*10)/10);
+    (balance.ranges=balance.ranges||[]).push({a:t,b:Math.min(PROJECT.dubEnd,t+5),v:+(balance.bgm*2).toFixed(1)});
+    paintBalance(); teDrawRanges();
+  };
+  box.append(add);
+  if(!(balance.ranges||[]).length){
+    const hint=document.createElement("span");
+    hint.style.cssText="font-size:11.5px;color:var(--dim)";
+    hint.textContent="— 없으면 전체가 위 값으로 나갑니다";
+    box.append(hint);
+  }
+}
+
 function teLockInfo(el){
   el=el||$("#teLockInfo"); if(!el)return;
   const n=lockedCount();
@@ -2921,7 +2972,7 @@ async function teSeek(t){
   if(!TE)return;
   const was=TE.playing; teStop();
   try{ TE.vid.currentTime=t }catch(e){}
-  if(TE.bed){ try{TE.bed.currentTime=t}catch(e){} }
+  if(TE.bed){ try{TE.bed.currentTime=t}catch(e){} teScheduleBed(); }
   teHead();
   if(was) tePlay();
 }
@@ -2974,6 +3025,7 @@ async function tePlay(){
   if(TE.bed && TE.bedOn!==false){
     try{ TE.bed.muted=false; TE.bed.currentTime=TE.vid.currentTime; TE.bed.play().catch(()=>{}) }catch(e){}
   }
+  teScheduleBed();
   TE.playing=true;
   $("#tePlay").textContent="■ 멈춤";
   if(!TE.raf) teTick();                       // 혹시 멈춰 있으면 다시 돌린다
@@ -4166,9 +4218,30 @@ function tickLive(){
 
 /* 소리 균형 — 슬라이더로 맞춘 값을 기억해 두고 합본에 쓴다.
    최종 영상(build_final.py)에도 적용하려면 segments.js 의 mix 에 적어야 한다. */
-const MIXDEF={bgm:(PROJECT.mix?.bgmVolume??0.9), voice:(PROJECT.mix?.voiceVolume??1.25)};
-let balance={...MIXDEF};
-try{ const v=JSON.parse(localStorage.getItem("dubroom:balance")||"null"); if(v)balance=v }catch(e){}
+const MIXDEF={bgm:(PROJECT.mix?.bgmVolume??0.9), voice:(PROJECT.mix?.voiceVolume??1.25),
+  ranges:(PROJECT.mix?.bgmRanges??[]).map(r=>({a:+r[0]||0,b:+r[1]||0,v:+r[2]||1}))};
+let balance={...MIXDEF, ranges:MIXDEF.ranges.map(r=>({...r}))};
+try{ const v=JSON.parse(localStorage.getItem("dubroom:balance")||"null");
+     if(v)balance={...balance,...v, ranges:Array.isArray(v.ranges)?v.ranges:balance.ranges} }catch(e){}
+
+/* 구간별 배경음악 — 종이 울리는 앞부분만 크게, 같은 식으로 쓴다.
+   겹치면 먼저 쓴 구간이 이긴다. 해당하는 구간이 없으면 전체 값. */
+const bgmAt=t=>{
+  for(const r of (balance.ranges||[])) if(t>=r.a && t<r.b) return r.v;
+  return balance.bgm;
+};
+/* 시간 순서대로 '언제부터 얼마' 인지의 목록을 만든다 (automation 용) */
+function bgmSteps(){
+  const edges=new Set([0, PROJECT.dubEnd]);
+  for(const r of (balance.ranges||[])){ edges.add(Math.max(0,r.a)); edges.add(Math.max(0,r.b)); }
+  const ts=[...edges].filter(t=>t<=PROJECT.dubEnd).sort((x,y)=>x-y);
+  const out=[];
+  for(const t of ts){
+    const v=bgmAt(t+0.001);
+    if(!out.length || Math.abs(out[out.length-1].v-v)>1e-6) out.push({t,v});
+  }
+  return out;
+}
 function paintBalance(){
   const set=(id,v)=>{const el=$(id); if(el)el.value=v};
   const txt=(id,v)=>{const el=$(id); if(el)el.textContent=v};
@@ -4178,16 +4251,20 @@ function paintBalance(){
   txt("#balBgmV",balance.bgm.toFixed(2));          txt("#teBalBgmV",balance.bgm.toFixed(2));
   txt("#balVoiceV",balance.voice.toFixed(2));      txt("#teBalVoiceV",balance.voice.toFixed(2));
   const same=Math.abs(balance.bgm-MIXDEF.bgm)<0.005&&Math.abs(balance.voice-MIXDEF.voice)<0.005;
-  txt("#balCode", same
+  const rs=(balance.ranges||[]).filter(r=>r.b>r.a);
+  const rtxt=rs.length
+    ? `  bgmRanges: [${rs.map(r=>`[${r.a},${r.b},${r.v}]`).join(", ")}],` : "";
+  txt("#balCode", (same && !rs.length)
     ? "segments.js 의 값과 같습니다"
-    : `bgmVolume: ${balance.bgm.toFixed(2)},  voiceVolume: ${balance.voice.toFixed(2)},`);
+    : `bgmVolume: ${balance.bgm.toFixed(2)},  voiceVolume: ${balance.voice.toFixed(2)},${rtxt}`);
   /* 지금 음악이 목소리보다 얼마나 작은지 숫자로 보여 준다 */
   const info=$("#teBalInfo");
   if(info&&TE&&TE.bedRms){
-    const 음악=toDb(TE.bedRms*balance.bgm);
+    const 여기=bgmAt((TE.bed&&TE.bed.currentTime)||(TE.vid&&TE.vid.currentTime)||0);
+    const 음악=toDb(TE.bedRms*여기);
     const 목소리=toDb(TARGET_RMS*balance.voice);
     const 차=Math.round(음악-목소리);
-    info.innerHTML = `음악 ${음악.toFixed(0)}dB · 목소리 ${목소리.toFixed(0)}dB — `
+    info.innerHTML = `지금 자리 음악 ${여기.toFixed(1)}배 · ${음악.toFixed(0)}dB · 목소리 ${목소리.toFixed(0)}dB — `
       + (차<-26 ? `<b style="color:var(--rec)">${-차}dB 작아 거의 안 들립니다</b>`
         : 차<-18 ? `<b style="color:var(--amber)">${-차}dB 작아 아주 희미합니다</b>`
         : 차<-6  ? `목소리 아래에 ${-차}dB 로 깔립니다`
@@ -4217,14 +4294,30 @@ async function teBedLevel(){
 }
 const toDb=v=>20*Math.log10(Math.max(v,1e-7));
 
+/* 지금 재생 위치부터 앞으로의 배경음악 크기를 미리 예약해 둔다 */
+function teScheduleBed(){
+  if(!TE||!TE.bedGain||!TE.ctx)return;
+  const g=TE.bedGain.gain, now=TE.ctx.currentTime;
+  try{ g.cancelScheduledValues(now) }catch(e){}
+  const at=(TE.bed&&TE.bed.currentTime)||0;
+  g.setValueAtTime(bgmAt(at), now);
+  if(!TE.playing)return;                     // 멈춰 있으면 지금 값만
+  for(const st of bgmSteps()){
+    if(st.t<=at)continue;
+    const when=now+(st.t-at);
+    g.setValueAtTime(g.value, Math.max(now,when-0.12));
+    g.linearRampToValueAtTime(st.v, when);
+  }
+}
+
 function teApplyBalance(){
   if(!TE)return;
   if(TE.voiceBus){ try{TE.voiceBus.gain.value=(TE.voiceOn===false?0:balance.voice)}catch(e){} }
   if(TE.bedGain){
     /* 게인으로 조절하므로 element 쪽은 1 로 되돌린다 — 안 그러면 두 번 줄어든다 */
-    try{TE.bedGain.gain.value=balance.bgm; TE.bed.volume=1}catch(e){}
+    try{ TE.bed.volume=1; teScheduleBed() }catch(e){}
   }
-  else if(TE.bed){ try{TE.bed.volume=Math.max(0,Math.min(1,balance.bgm))}catch(e){} }
+  else if(TE.bed){ try{TE.bed.volume=Math.max(0,Math.min(1,bgmAt(TE.bed.currentTime||0)))}catch(e){} }
 }
 $("#balBgm").oninput  =e=>{balance.bgm  =+e.target.value/100; paintBalance()};
 $("#balVoice").oninput=e=>{balance.voice=+e.target.value/100; paintBalance()};
@@ -4274,7 +4367,16 @@ async function mix(){
   if(!voices.length)throw new Error("녹음을 하나도 읽지 못했습니다. 이 브라우저가 녹음 형식을 지원하지 않을 수 있습니다 — 크롬으로 열어보세요.");
   tmp.close();
   const off=new OfflineAudioContext(2,Math.ceil(sr*dur),sr);
-  if(bed){const b=off.createBufferSource();b.buffer=bed;const g=off.createGain();g.gain.value=balance.bgm;
+  if(bed){
+    const b=off.createBufferSource();b.buffer=bed;const g=off.createGain();
+    /* 구간별로 크기를 바꾼다 — 툭 바뀌지 않게 0.12초에 걸쳐 넘어간다 */
+    const steps=bgmSteps();
+    g.gain.setValueAtTime(steps[0]?steps[0].v:balance.bgm, 0);
+    for(let i=1;i<steps.length;i++){
+      const t=Math.max(0.0001,steps[i].t);
+      g.gain.setValueAtTime(steps[i-1].v, Math.max(0,t-0.12));
+      g.gain.linearRampToValueAtTime(steps[i].v, t);
+    }
     b.connect(g).connect(off.destination);b.start(0)}
   for(const v of voices){
     const {offset,dur,gain}=polish(v.buf);
