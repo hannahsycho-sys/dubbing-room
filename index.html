@@ -561,6 +561,8 @@ tr.justin td{animation:flashin 2.4s ease-out}
       <button class="btn sm alt hide" id="aCutUndo">↺ 앞뒤 정리 되돌리기</button>
       <button class="btn sm alt hide" id="aSnap">🎯 싱크 맞추기</button>
       <button class="btn sm alt hide" id="aSnapUndo">↺ 싱크 맞추기 되돌리기</button>
+      <button class="btn sm alt hide" id="aFit">⏱ 길이 맞추기</button>
+      <button class="btn sm alt hide" id="aFitUndo">↺ 길이 맞추기 되돌리기</button>
       <button class="btn sm alt" id="aAuto">✨ 겹침 자동 정리</button>
       <button class="btn sm alt hide" id="aAutoUndo">↺ 자동 정리 되돌리기</button>
       <button class="btn sm alt hide" id="aTime">⏱ 타이밍 맞추기</button>
@@ -2160,6 +2162,8 @@ function drawAdmin(){
     $("#aCutUndo").classList.toggle("hide", !hasC);
     const hasS=!!JSON.parse(localStorage.getItem(SNAPKEY())||"null");
     $("#aSnapUndo").classList.toggle("hide", !hasS);
+    const hasF=!!JSON.parse(localStorage.getItem(FITKEY())||"null");
+    $("#aFitUndo").classList.toggle("hide", !hasF);
   }catch(e){}
   $("#aNote").innerHTML=online
     ? `제출 <b>${subs.length} / ${PROJECT.lines.length}</b> 줄`
@@ -2299,7 +2303,7 @@ function fadeBuffer(buf){
    조각을 겹쳐 붙이되, 이어 붙일 자리를 앞 조각과 가장 잘 맞는 곳에서 찾아
    '우글거리는' 소리가 나지 않게 한다. 1.25배 안쪽이면 거의 티가 안 난다. */
 function stretchBuffer(buf,rate){
-  rate=Math.max(0.9,Math.min(1.25,+rate||1));
+  rate=Math.max(0.85,Math.min(1.20,+rate||1));
   if(Math.abs(rate-1)<0.01)return buf;
   const sr=buf.sampleRate;
   const N=Math.round(0.06*sr);          // 조각 60ms
@@ -2474,6 +2478,8 @@ function teOpen(){
         <div class="tectl" style="margin-top:9px">
           <button class="mini" id="tePlay">▶ 재생</button>
           <span class="mono" id="teTime" style="color:var(--amber);min-width:62px">0:00.0</span>
+          <label class="sw" style="font-size:12px;color:var(--dim)" title="목소리만 집중해서 들을 때 끄세요">
+            <input type="checkbox" id="teBed" checked> 배경음악</label>
           <span style="font-size:12px;color:var(--dim)">확대</span>
           <button class="mini" id="teZo">－</button><button class="mini" id="teZi">＋</button>
           <span class="gap" style="flex:1"></span>
@@ -2483,6 +2489,9 @@ function teOpen(){
       <div>
         <div class="edrow" id="teBulk" style="margin-top:0"></div>
         <div id="teSel" style="font-size:12.5px;color:var(--dim);min-height:22px;margin-top:14px"></div>
+        <p style="margin:8px 0 4px;font-size:11.5px;color:var(--dim)">
+          파형을 <b style="color:var(--ink)">누르면 그 자리부터</b> 들려주고,
+          <b style="color:var(--ink)">앞·뒤 손잡이를 놓으면</b> 잘린 결과를 바로 들려줍니다.</p>
         <div class="tewave hide" id="teWave">
           <canvas></canvas>
           <div class="cut" id="teCutL"></div><div class="cut" id="teCutR"></div>
@@ -2500,7 +2509,8 @@ function teOpen(){
       빨간 블록은 다음 사람과 겹치는 줄입니다. 눈금을 누르면 그 자리로 이동합니다.</p>`;
   host.before(w);
 
-  TE={vid:$("#teVid"), px:40, srcs:[], raf:0, playing:false, sel:null, ctx:null, bufs:new Map()};
+  TE={vid:$("#teVid"), px:40, srcs:[], raf:0, playing:false, sel:null, ctx:null,
+      bufs:new Map(), bedOn:true};
   TE.vid.src=PROJECT.video;
   TE.vid.muted=!!PROJECT.videoBgm;
   TE.bed=PROJECT.videoBgm?Object.assign(new Audio(PROJECT.videoBgm),{preload:"auto"}):null;
@@ -2538,8 +2548,19 @@ function teOpen(){
     link("↺","#aAutoUndo","겹침 정리 되돌리기"),
     link("✂ 앞뒤 정리","#aCut","말이 시작·끝나는 지점을 찾아 앞뒤의 잡음과 묵음을 잘라낸다"),
     link("↺","#aCutUndo","앞뒤 정리 되돌리기"),
-    link("🎯 싱크 맞추기","#aSnap","모든 대사를 대본상 시작 시각에 놓는다"),
-    link("↺","#aSnapUndo","싱크 맞추기 되돌리기"));
+    link("🎯 싱크 맞추기","#aSnap","말이 대사 칸 가운데 오도록 놓아 앞뒤 어긋남을 나눈다"),
+    link("↺","#aSnapUndo","싱크 맞추기 되돌리기"),
+    link("⏱ 길이 맞추기","#aFit","말 길이를 대사 칸에 맞춰 속도를 조금 조정한다"),
+    link("↺","#aFitUndo","길이 맞추기 되돌리기"));
+
+  $("#teBed").onchange=e=>{
+    TE.bedOn=e.target.checked;
+    if(TE.bed){
+      TE.bed.muted=!TE.bedOn;
+      if(TE.bedOn && TE.playing){ try{TE.bed.currentTime=TE.vid.currentTime; TE.bed.play().catch(()=>{})}catch(_){} }
+      else if(!TE.bedOn){ try{TE.bed.pause()}catch(_){} }
+    }
+  };
 
   $("#teClose").onclick=teClose;
   $("#tePlay").onclick=()=>TE.playing?teStop():tePlay();
@@ -2669,6 +2690,7 @@ function teTick(){
 
 function teSelect(it,noSeek){
   if(!TE)return;
+  stopNotePrev();
   TE.sel=it;
   /* 누른 대사의 장면을 영상에 보여 준다 (재생 중이 아닐 때만) */
   if(!noSeek && !TE.playing){
@@ -2738,12 +2760,34 @@ async function teWave(it){
     sl.textContent=ts>0.004?ts.toFixed(2)+"s":"앞"; sr.textContent=te>0.004?te.toFixed(2)+"s":"뒤";
     sl.style.transform = xl<34?"translateX(34px)":""; sr.style.transform = xr>w-34?"translateX(-34px)":"";
   };
+  /* 자르면서 들어볼 수 있게 — 파형을 누르면 그 자리부터, 손잡이를 놓으면 잘린 결과를 들려준다 */
+  let probe=null;
+  const stopProbe=()=>{ if(probe){try{probe.stop()}catch(e){} probe=null} };
+  const playPart=async(buffer, from, dur)=>{
+    stopProbe(); stopNotePrev();
+    const ctx=await sharedCtx();
+    const src=ctx.createBufferSource(); src.buffer=buffer;
+    const g=ctx.createGain(); g.gain.value=dbToMul(gainOf(it.l.id));
+    src.connect(g).connect(ctx.destination);
+    src.onended=()=>{ if(probe===src)probe=null };
+    try{ src.start(0, Math.max(0,from||0), dur) }catch(e){ return }
+    probe=src;
+  };
+  box.addEventListener("pointerdown",e=>{
+    if(e.target.classList.contains("trimh")||e.target.closest(".trimh"))return;
+    const r=box.getBoundingClientRect();
+    const at=Math.max(0,Math.min(dur-0.05,(e.clientX-r.left)/r.width*dur));
+    playPart(raw, at, Math.min(2.0, dur-at));     // 누른 자리부터 2초만
+  });
+
   const save=async()=>{
     const patch=trimPatch(it.s,ts,te);
     const {error}=await sb.from("submissions").update(patch).eq("id",it.s.id);
     Object.assign(it.s,patch);
     if(error)$("#aNote").innerHTML=`자르기 저장 실패: <b>${esc(error.message)}</b>`;
     mixBufs.clear(); teDraw(); teSelect(it,true);
+    /* 잘라낸 결과를 바로 들려준다 — 들어보면서 다듬을 수 있게 */
+    playPart(trimBuffer(raw, ts, te), 0);
   };
   const drag=(h,isL)=>{
     h.onpointerdown=e=>{
@@ -2788,7 +2832,9 @@ async function tePlay(){
       — 한 번 더 눌러 주세요.`;
     TE.playing=false; return;
   }
-  if(TE.bed){ try{TE.bed.currentTime=TE.vid.currentTime; TE.bed.play().catch(()=>{})}catch(e){} }
+  if(TE.bed && TE.bedOn!==false){
+    try{ TE.bed.muted=false; TE.bed.currentTime=TE.vid.currentTime; TE.bed.play().catch(()=>{}) }catch(e){}
+  }
   TE.playing=true;
   $("#tePlay").textContent="■ 멈춤";
   if(!TE.raf) teTick();                       // 혹시 멈춰 있으면 다시 돌린다
@@ -2869,6 +2915,13 @@ function teDrag(el,it){
    설정이 바뀌면 열쇠가 달라져 자동으로 다시 만든다. */
 let mixCtx=null;
 const mixBufs=new Map();
+/* 브라우저가 동시에 열 수 있는 오디오 연결 수는 제한돼 있다.
+   재생할 때마다 새로 만들면 한도에 걸려 아무 소리도 안 나게 되므로 하나를 돌려 쓴다. */
+async function sharedCtx(){
+  mixCtx = mixCtx || new (window.AudioContext||webkitAudioContext)();
+  if(mixCtx.state==="suspended") await mixCtx.resume().catch(()=>{});
+  return mixCtx;
+}
 function mixKey(url,row){
   const r=row||{};
   return `${url}|${+r.trim_s||0}|${+r.trim_e||0}|${+r.clean||0}`
@@ -2922,6 +2975,74 @@ function playBuffer(buf,gainMul){
   return {pause(){ try{src.stop()}catch(e){} try{src.disconnect()}catch(e){} }};
 }
 
+/* ===== 길이 맞추기 =====
+   시작만 맞춰도 말하는 속도가 다르면 문장 중간부터 입과 어긋난다.
+   말 길이를 대사 칸에 맞춰 속도를 조금 바꿔 주면 끝까지 붙는다.
+   다만 아무 줄에나 쓰면 안 된다 —
+     · 짧은 감탄사는 원래 여백이 있는 것이라 늘리면 괴상해진다
+     · 차이가 너무 크면 속도로 메울 수 없다 (다시 녹음해야 한다)
+   그래서 '충분히 긴 대사' 이면서 '차이가 감당할 만한' 줄에만 적용한다. */
+const FITKEY=()=>`dubroom:fit:${PROJECT.key}`;
+const FIT_MINLEN=1.2, FIT_LO=0.70, FIT_HI=1.40, SP_LO=0.85, SP_HI=1.20;
+
+$("#aFit").onclick=async()=>{
+  const b=$("#aFit"); b.disabled=true;
+  try{
+    const items=PROJECT.lines.map(l=>({l,s:subs.find(x=>x.line_id===l.id)})).filter(x=>x.s);
+    if(!items.length)throw new Error("제출된 녹음이 없습니다.");
+    const snap=items.map(x=>({id:x.s.id,line_id:x.l.id,speed:+x.s.speed||1}));
+
+    const 적용=[], 건너뜀=[];
+    for(let i=0;i<items.length;i++){
+      const it=items[i];
+      prog(i/items.length*80,`말 길이를 재는 중… ${i+1} / ${items.length}`);
+      let buf;
+      try{
+        const ctx=await sharedCtx();
+        buf=await ctx.decodeAudioData(await (await fetch(pub(it.s.path))).arrayBuffer());
+      }catch(e){ continue }
+      const on=speechOnset(buf), end=speechEnd(buf);
+      const 말=Math.max(0.05, end-on);
+      const 칸=it.l.e-it.l.s;
+      const want=말/칸;
+      if(칸<FIT_MINLEN){ 건너뜀.push(`${it.l.id}번(너무 짧음)`); continue }
+      if(want<FIT_LO||want>FIT_HI){ 건너뜀.push(`${it.l.id}번(${want.toFixed(2)}배 필요 — 속도로는 무리)`); continue }
+      const sp=Math.max(SP_LO,Math.min(SP_HI,+want.toFixed(2)));
+      if(Math.abs(sp-(+it.s.speed||1))<0.015) continue;
+      const {error}=await sb.from("submissions").update({speed:sp}).eq("id",it.s.id);
+      if(error){ prog(0,`<b style="color:var(--rec)">저장 실패: ${esc(error.message)}</b>`); b.disabled=false; return }
+      it.s.speed=sp; 적용.push(`${it.l.id}번 ${sp.toFixed(2)}배`);
+    }
+    try{ localStorage.setItem(FITKEY(), JSON.stringify(snap)) }catch(e){}
+    $("#aFitUndo").classList.remove("hide");
+    mixBufs.clear(); drawAdmin();
+    progDone(`<b>${적용.length}줄</b>의 말 길이를 대사 칸에 맞췄습니다 — ${적용.slice(0,8).map(esc).join(", ")}${적용.length>8?" …":""}.`
+      + (건너뜀.length ? `<br>건드리지 않은 ${건너뜀.length}줄: ${건너뜀.slice(0,6).map(esc).join(", ")}${건너뜀.length>6?" …":""}
+           — 짧은 감탄사거나 차이가 너무 커서 <b>다시 녹음</b>하는 편이 낫습니다.` : "")
+      + ` 마음에 안 들면 <b>↺ 길이 맞추기 되돌리기</b>.`);
+  }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
+  b.disabled=false;
+};
+
+$("#aFitUndo").onclick=async()=>{
+  const b=$("#aFitUndo"); b.disabled=true;
+  try{
+    const snap=JSON.parse(localStorage.getItem(FITKEY())||"null");
+    if(!snap||!snap.length)throw new Error("되돌릴 기록이 없습니다.");
+    for(let i=0;i<snap.length;i++){
+      prog(i/snap.length*95,`되돌리는 중… ${i+1} / ${snap.length}`);
+      const o=snap[i];
+      const {error}=await sb.from("submissions").update({speed:o.speed}).eq("id",o.id);
+      if(error)throw error;
+      const cur=subs.find(x=>x.line_id===o.line_id); if(cur)cur.speed=o.speed;
+    }
+    try{ localStorage.removeItem(FITKEY()) }catch(e){}
+    b.classList.add("hide"); mixBufs.clear(); drawAdmin();
+    progDone(`${snap.length}줄의 말 속도를 되돌렸습니다.`);
+  }catch(e){ prog(0,`<b style="color:var(--rec)">되돌리기 실패: ${esc(e.message||e)}</b>`) }
+  b.disabled=false;
+};
+
 /* ===== 싱크 맞추기 =====
    ✂ 앞뒤 정리 로 앞을 잘라내면 녹음은 '말이 시작되는 지점' 부터 시작한다.
    그러면 그 목소리는 대본상 그 대사가 시작되는 시각에 나와야 하므로 싱크를 0 으로 놓는다.
@@ -2931,28 +3052,53 @@ const SNAPKEY=()=>`dubroom:snap:${PROJECT.key}`;
 $("#aSnap").onclick=async()=>{
   const b=$("#aSnap"); b.disabled=true;
   try{
-    const items=PROJECT.lines.map(l=>({l,s:subs.find(x=>x.line_id===l.id)})).filter(x=>x.s);
+    const items=PROJECT.lines.map(l=>({l,s:subs.find(x=>x.line_id===l.id)}))
+                             .filter(x=>x.s).sort((a,c)=>a.l.s-c.l.s);
     if(!items.length)throw new Error("제출된 녹음이 없습니다.");
     const snap=items.map(x=>({id:x.s.id, line_id:x.l.id, offset_ms:+x.s.offset_ms||0}));
-    const 손댈것=items.filter(x=>Math.abs(+x.s.offset_ms||0)>0.5);
-    if(!손댈것.length){ progDone("이미 모든 대사가 제자리에 있습니다."); b.disabled=false; return }
 
-    let n=0;
-    for(let i=0;i<손댈것.length;i++){
-      const it=손댈것[i];
-      prog(i/손댈것.length*95,`맞추는 중… ${i+1} / ${손댈것.length}`);
-      const {error}=await sb.from("submissions").update({offset_ms:0}).eq("id",it.s.id);
+    /* 코치님 말 길이가 대사 칸과 다를 때, 시작만 맞추면 뒤로 갈수록 입과 어긋난다.
+       말을 칸 한가운데에 놓아 어긋남을 앞뒤로 나눠 갖게 한다. */
+    const plan=[]; let prevEnd=-9;
+    for(let i=0;i<items.length;i++){
+      const it=items[i];
+      prog(i/items.length*80,`말 길이를 재는 중… ${i+1} / ${items.length}`);
+      let buf;
+      try{
+        const ctx=await sharedCtx();
+        buf=await ctx.decodeAudioData(await (await fetch(pub(it.s.path))).arrayBuffer());
+      }catch(e){ continue }
+      const ts=+it.s.trim_s||0, te=+it.s.trim_e||0, sp=Math.max(0.5,+it.s.speed||1);
+      const on=speechOnset(buf), off=speechEnd(buf);
+      const a=Math.max(on,ts), c=Math.min(off, buf.duration-te);
+      const 말=Math.max(0.05,(c-a))/sp;              // 실제 들리는 말의 길이
+      const 앞여백=Math.max(0,(a-ts))/sp;            // 잘라낸 뒤에도 남은 앞 여백
+      const 칸=it.l.e-it.l.s;
+
+      /* 말이 칸 한가운데 오도록 — 그 다음 앞뒤 대사와 부딪히지 않게 다듬는다 */
+      let 말시작=it.l.s+Math.max(0,(칸-말)/2);
+      말시작=Math.max(말시작, prevEnd+0.06);
+      const 다음=i+1<items.length?items[i+1].l.s:PROJECT.dubEnd;
+      말시작=Math.min(말시작, Math.max(it.l.s, 다음-말-0.06));
+      prevEnd=말시작+말;
+
+      const ofs=Math.max(-3000,Math.min(3000,Math.round((말시작-앞여백-it.l.s)*1000)));
+      if(Math.abs(ofs-(+it.s.offset_ms||0))>=1) plan.push({it, ofs});
+    }
+
+    if(!plan.length){ progDone("이미 모든 대사가 제자리에 있습니다."); b.disabled=false; return }
+    prog(88,"맞추는 중…");
+    for(const p2 of plan){
+      const {error}=await sb.from("submissions").update({offset_ms:p2.ofs}).eq("id",p2.it.s.id);
       if(error){ prog(0,`<b style="color:var(--rec)">저장 실패: ${esc(error.message)}</b>`); b.disabled=false; return }
-      it.s.offset_ms=0; n++;
+      p2.it.s.offset_ms=p2.ofs;
     }
     try{ localStorage.setItem(SNAPKEY(), JSON.stringify(snap)) }catch(e){}
     $("#aSnapUndo").classList.remove("hide");
     mixBufs.clear(); drawAdmin();
-    const 안잘린=items.filter(x=>(+x.s.trim_s||0)<0.03).length;
-    progDone(`<b>${n}줄</b>을 대사 시작 시각에 맞췄습니다.`
-      + (안잘린 ? ` 다만 <b>${안잘린}줄</b>은 앞을 아직 안 잘라서, 앞의 묵음만큼 늦게 들릴 수 있습니다 —
-                   <b>✂ 앞뒤 정리</b> 를 먼저 돌리면 더 잘 맞습니다.` : "")
-      + ` 마음에 안 들면 <b>↺ 싱크 맞추기 되돌리기</b>.`);
+    progDone(`<b>${plan.length}줄</b>의 싱크를 맞췄습니다 — 말이 대사 칸 가운데에 오도록 놓아,
+      앞뒤 어긋남을 나눠 가집니다. 길이 차이가 큰 줄은 <b>⏱ 길이 맞추기</b> 를 같이 쓰면 더 잘 맞습니다.
+      마음에 안 들면 <b>↺ 싱크 맞추기 되돌리기</b>.`);
   }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
   b.disabled=false;
 };
@@ -3507,7 +3653,7 @@ function mkLineSpeed(l,s,after){
     val.title = v>1.15 ? "1.15배를 넘으면 빨라진 티가 납니다" : "";
   };
   const save=async nv=>{
-    nv=Math.max(0.90,Math.min(1.25,Math.round(nv*100)/100));
+    nv=Math.max(0.85,Math.min(1.20,Math.round(nv*100)/100));
     box.querySelectorAll("button").forEach(x=>x.disabled=true);
     const {error}=await sb.from("submissions").update({speed:nv}).eq("id",s.id);
     box.querySelectorAll("button").forEach(x=>x.disabled=false);
