@@ -2257,8 +2257,9 @@ function normalizeBuffer(buf){
   return buf;
 }
 
-/* 앞을 자르면 그만큼 목소리가 앞당겨진다. 싱크를 같이 밀어 제자리에 머물게 한다.
-   (잡음을 잘라낼 때마다 싱크를 손으로 다시 맞추지 않아도 되게 하려는 것) */
+/* 앞을 잘라내면, 잘라낸 파일은 '말이 시작되는 지점' 부터 시작한다.
+   그 목소리는 대본상 그 대사가 시작되는 시각에 나와야 하므로 싱크를 0 으로 맞춘다.
+   (앞의 잡음·묵음을 걷어내면 저절로 제자리를 찾아가게 하려는 것) */
 let autoSync=true;
 try{ autoSync = localStorage.getItem("dubroom:autosync")!=="0" }catch(e){}
 function trimPatch(row,newTs,newTe){
@@ -2267,8 +2268,7 @@ function trimPatch(row,newTs,newTe){
   if(newTe!=null)p.trim_e=+(+newTe).toFixed(3);
   if(autoSync && newTs!=null){
     const d=(+newTs)-(+row.trim_s||0);
-    if(Math.abs(d)>0.004)
-      p.offset_ms=Math.max(-3000,Math.min(3000,Math.round((+row.offset_ms||0)+d*1000)));
+    if(Math.abs(d)>0.004) p.offset_ms=0;      // 대사 시작에 맞춘다
   }
   return p;
 }
@@ -2520,8 +2520,8 @@ function teOpen(){
   };
   const sw=document.createElement("label");
   sw.className="sw"; sw.style.cssText="font-size:12px;color:var(--dim)";
-  sw.innerHTML=`<input type="checkbox" id="teAutoSync"${autoSync?" checked":""}> 자르면 싱크 자동 보정`;
-  sw.title="앞을 잘라낸 만큼 싱크를 밀어, 목소리가 제자리에 머물게 합니다";
+  sw.innerHTML=`<input type="checkbox" id="teAutoSync"${autoSync?" checked":""}> 자르면 대사 시작에 맞추기`;
+  sw.title="앞을 잘라내면 그 목소리가 대본상 대사 시작 시각에 나오도록 싱크를 0 으로 맞춥니다";
   sw.querySelector("input").onchange=e2=>{
     autoSync=e2.target.checked;
     try{ localStorage.setItem("dubroom:autosync", autoSync?"1":"0") }catch(_){}
@@ -3010,7 +3010,7 @@ $("#aCut").onclick=async()=>{
     progDone(`<b>${found.length}줄</b>을 정리했습니다 — 앞 ${앞}줄 / 뒤 ${뒤}줄.<br>`
       + found.slice(0,6).map(f=>`${f.it.l.id}번 앞${f.on.toFixed(2)}s·뒤${f.te.toFixed(2)}s`).join(", ")
       + (found.length>6?" …":"")
-      + `<br>목소리 위치는 그대로 유지되도록 싱크도 같이 맞췄습니다.
+      + `<br>잘라낸 줄은 <b>대사 시작 시각에 맞춰</b> 싱크를 0 으로 놓았습니다.
          마음에 안 들면 <b>↺ 되돌리기</b>.`);
   }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
   b.disabled=false;
