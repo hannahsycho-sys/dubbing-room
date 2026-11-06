@@ -2609,7 +2609,7 @@ function teOpen(){
     teLockInfo(); teDraw(); if(TE&&TE.sel)teSelect(TE.sel,true);
   };
   bulk.append(lk);
-  teLockInfo();
+  teLockInfo(lk);
 
   $("#teBed").onchange=e=>{
     TE.bedOn=e.target.checked;
@@ -2748,8 +2748,8 @@ function teTick(){
   TE.raf=requestAnimationFrame(teTick);
 }
 
-function teLockInfo(){
-  const el=$("#teLockInfo"); if(!el)return;
+function teLockInfo(el){
+  el=el||$("#teLockInfo"); if(!el)return;
   const n=lockedCount();
   el.innerHTML = n ? `\u{1F512} 확정 ${n}줄 — 자동 정리가 건너뜁니다 <u>전부 풀기</u>` : "";
 }
