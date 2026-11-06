@@ -15,7 +15,7 @@ build_final.py — 10명이 올린 녹음을 모아서 최종 더빙 영상 한 
   --only white|black   한 팀 구간만 만들기
   --keep    중간 파일을 지우지 않기
 """
-import json, os, re, subprocess, sys, tempfile, urllib.request, shutil
+import json, math, os, re, subprocess, sys, tempfile, urllib.request, shutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -70,202 +70,55 @@ def bgm_ranges():
 BGM_RANGES = bgm_ranges()
 
 def bgm_filter():
-    """구간마다 크기를 바꾼다. 0.12초에 걸쳐 넘어가 툭 끊기지 않게 한다."""
+    """구간마다 배경음악 크기를 바꾼다.
+
+    크기 차이가 클수록 천천히 넘어간다 — 짧게 끊으면 '울컥' 하고 티가 난다.
+    방향에 따라 넘어가는 자리도 다르다.
+      줄일 때 : 경계까지는 그대로 두고 경계부터 내린다 (앞의 꼬리를 안 자른다)
+      키울 때 : 경계 전에 미리 올려 둔다 (구간이 시작될 때 이미 제 크기)
+    브라우저 쪽 bgmFade() / teScheduleBed() 와 같은 규칙이다.
+    """
     if not BGM_RANGES:
         return f"volume={BGM_VOL}"
-    # 겹치면 먼저 쓴 것이 이긴다 — 브라우저 쪽 bgmAt() 과 같은 규칙
-    edges = sorted({0.0, DUB_END} | {t for a, b, _ in BGM_RANGES for t in (a, b)})
-    def level(t):
+
+    def level(t):                      # 겹치면 먼저 쓴 구간이 이긴다
         for a, b, v in BGM_RANGES:
             if a <= t < b:
                 return v
         return BGM_VOL
-    parts, F = [], 0.12
-    for i, t in enumerate(edges):
-        if t >= DUB_END:
-            break
-        v = level(t + 1e-6)
-        nxt = edges[i + 1] if i + 1 < len(edges) else DUB_END
-        if i == 0:
-            parts.append(f"between(t,{t},{max(t, nxt - F)})*{v}")
+
+    def fade(v0, v1):
+        d = abs(20 * math.log10(max(v1, 1e-4) / max(v0, 1e-4)))
+        return max(0.25, min(2.2, d * 0.09))
+
+    edges = sorted({0.0} | {t for a, b, _ in BGM_RANGES for t in (a, b) if 0 < t < DUB_END})
+    marks = [(0.0, level(1e-6))]       # (시각, 그 시각의 값)
+    for t in edges:
+        if t <= 0:
+            continue
+        v0, v1 = level(t - 1e-6), level(t + 1e-6)
+        if abs(v1 - v0) < 1e-9:
+            continue
+        F = fade(v0, v1)
+        if v1 < v0:
+            marks += [(t, v0), (min(DUB_END, t + F), v1)]
         else:
-            # 앞 구간에서 이 구간으로 F초에 걸쳐 건너온다
-            prev = level(t - 1e-6)
-            parts.append(f"between(t,{max(0, t - F)},{t})*({prev}+({v}-{prev})*(t-{max(0, t - F)})/{F})")
-            parts.append(f"between(t,{t},{max(t, nxt - F)})*{v}")
-    expr = "+".join(parts)
-    return f"volume='{expr}':eval=frame"
-VOICE_VOL = mixval("voiceVolume", 1.25)
-TITLE_SEC = mixval("titleSec",    4.0)
-NORM_AMT  = max(0.0, min(1.0, mixval("normalizeAmount", 0.5)))
-V_FADE_I  = mixval("voiceFadeIn",  0.030)
-V_FADE_O  = mixval("voiceFadeOut", 0.045)
-FADE_IN   = mixval("fadeIn",      0.8)
-FADE_OUT  = mixval("fadeOut",     2.6)
+            marks += [(max(0.0, t - F), v0), (t, v1)]
+    marks.sort(key=lambda m: m[0])
+    marks.append((DUB_END + 1.0, marks[-1][1]))
 
-LINES = []
-for m in re.finditer(r'\{\s*id:\s*(\d+),\s*team:"(\w+)",\s*char:"([^"]+)",\s*s:\s*([\d.]+),\s*e:\s*([\d.]+)', seg):
-    LINES.append(dict(id=int(m.group(1)), team=m.group(2), char=m.group(3),
-                      s=float(m.group(4)), e=float(m.group(5))))
-if not LINES:
-    sys.exit("segments.js 에서 대사를 못 읽었습니다.")
-
-argv = sys.argv[1:]
-USE_ORIG = "--orig" in argv
-KEEP     = "--keep" in argv
-NO_TITLES= "--no-titles" in argv
-SUBS     = "--subs" in argv            # 영상에 자막을 새긴다
-SUBS_SOFT= "--subs-soft" in argv       # 끄고 켤 수 있는 자막으로 넣는다
-SUBLANG  = argv[argv.index("--sub-lang")+1] if "--sub-lang" in argv else "both"
-ONLY     = argv[argv.index("--only")+1] if "--only" in argv else None
-
-# ---------- 제출 목록 ----------
-if not URL or not KEY:
-    sys.exit("config.js 의 SUPABASE_URL / SUPABASE_ANON_KEY 가 비어 있습니다.")
-
-def api(path):
-    req = urllib.request.Request(f"{URL}/rest/v1/{path}",
-        headers={"apikey": KEY, "Authorization": f"Bearer {KEY}"})
-    return json.load(urllib.request.urlopen(req))
-
-print("제출 목록 가져오는 중…")
-rows = api(f"submissions?project=eq.{PKEY}&select=*&order=created_at.asc")
-latest = {}
-for r in rows:
-    latest[r["line_id"]] = r          # 나중 것이 이김
-print(f"  {len(latest)} / {len(LINES)} 줄 제출됨")
-
-wanted = [l for l in LINES if (ONLY is None or l["team"] == ONLY)]
-missing = [l for l in wanted if l["id"] not in latest]
-if missing:
-    print(f"  ⚠ 아직 안 올라온 줄 {len(missing)}개: " +
-          ", ".join(f'{l["id"]}({l["char"]})' for l in missing))
-    print("    그 자리는 배경음악만 들어갑니다.")
-
-have = [l for l in wanted if l["id"] in latest]
-if not have:
-    sys.exit("제출된 녹음이 하나도 없습니다.")
-
-# ---------- 내려받기 ----------
-tmp = tempfile.mkdtemp(prefix="dubmix_")
-print(f"녹음 내려받는 중… ({len(have)}개)")
-files = {}
-for l in have:
-    r = latest[l["id"]]
-    url = f"{URL}/storage/v1/object/public/{BUCKET}/{r['path']}"
-    dst = os.path.join(tmp, f"{l['id']:02d}.bin")
-    try:
-        urllib.request.urlretrieve(url, dst)
-        files[l["id"]] = dst
-    except Exception as e:
-        print(f"  건너뜀 line {l['id']}: {e}")
-
-# ---------- 믹스 ----------
-bed = os.path.join(HERE, BGM) if (BGM and not USE_ORIG) else None
-if bed and not os.path.exists(bed):
-    print(f"  배경음악 {BGM} 이 없어서 원본 소리를 씁니다.")
-    bed = None
-
-video = os.path.join(HERE, VIDEO)
-if not os.path.exists(video):
-    sys.exit(f"영상이 없습니다: {video}")
-
-# 음질 보정 — 단계별 ffmpeg 체인.
-#   저역 잡음 깎기 → 잡음 줄이기(afftdn) → 또렷하게(3kHz 살짝 올리기)
-#   강하게 단계에서는 치찰음까지 눌러 준다.
-CLEAN_CHAIN = {
-    0: "",
-    1: "highpass=f=75,afftdn=nr=8:nf=-28,equalizer=f=3000:t=q:w=1.4:g=1.5,",
-    2: "highpass=f=80,afftdn=nr=14:nf=-32,equalizer=f=3000:t=q:w=1.4:g=2,",
-    3: "highpass=f=85,afftdn=nr=20:nf=-36,equalizer=f=3000:t=q:w=1.4:g=2.5,deesser,",
-}
-def trim_of(row):
-    """앞/뒤로 잘라낼 만큼을 ffmpeg atrim 으로 바꾼다. 없으면 빈 문자열."""
-    try:
-        ts = max(0.0, float(row.get("trim_s") or 0))
-        te = max(0.0, float(row.get("trim_e") or 0))
-        dur = float(row.get("dur") or 0)
-    except (TypeError, ValueError):
-        return ""
-    if ts <= 0.001 and te <= 0.001:
-        return ""
-    end = (dur - te) if dur > 0 else 0
-    f = f"atrim=start={ts:.3f}" + (f":end={end:.3f}" if end > ts else "")
-    return f + ",asetpts=PTS-STARTPTS,"
+    parts = []
+    for i in range(len(marks) - 1):
+        (t0, v0), (t1, v1) = marks[i], marks[i + 1]
+        if t1 <= t0 + 1e-6:
+            continue
+        if abs(v1 - v0) < 1e-9:
+            parts.append(f"between(t,{t0:g},{t1:g})*{v0:g}")
+        else:
+            parts.append(f"between(t,{t0:g},{t1:g})*({v0:g}+({v1:g}-{v0:g})*(t-{t0:g})/{t1-t0:g})")
+    return "volume='" + "+".join(parts) + "':eval=frame"
 
 
-def measure_lufs(path, pre=""):
-    """녹음의 실제 음량(LUFS)을 잰다. 못 재면 None."""
-    cmd = [FF, "-hide_banner", "-nostats", "-i", path, "-af",
-           f"{pre}loudnorm=I=-20:TP=-2.0:LRA=11:print_format=json", "-f", "null", "-"]
-    out = subprocess.run(cmd, capture_output=True, text=True).stderr
-    m = re.findall(r'"input_i"\s*:\s*"(-?[\d.]+)"', out)
-    try:
-        return float(m[-1]) if m else None
-    except (ValueError, IndexError):
-        return None
-
-
-def level_filter(path, pre=""):
-    """음량 맞추기.
-       NORM_AMT 가 1 이면 ffmpeg loudnorm 으로 완전히 맞추고,
-       그보다 작으면 실제 음량을 재서 '그만큼만' 끌어올린다.
-       전부 같은 크기로 만들면 속삭이는 대사도 외치는 대사만큼 커져 툭툭 튄다. """
-    if NORM_AMT >= 0.99:
-        return "loudnorm=I=-20:TP=-2.0:LRA=11,"
-    if NORM_AMT <= 0.01:
-        return ""
-    cur = measure_lufs(path, pre)
-    if cur is None:
-        return "loudnorm=I=-20:TP=-2.0:LRA=11,"
-    delta = (-20.0 - cur) * NORM_AMT
-    delta = max(-12.0, min(12.0, delta))
-    return f"volume={delta:+.2f}dB," if abs(delta) > 0.05 else ""
-
-
-def speed_of(row):
-    """말 속도 — atempo 는 음높이를 그대로 두고 빠르기만 바꾼다."""
-    try: v = float(row.get("speed") or 1)
-    except (TypeError, ValueError): return ""
-    v = max(0.5, min(2.0, v))
-    return f"atempo={v:.3f}," if abs(v - 1) > 0.005 else ""
-
-
-def eq_of(row):
-    """사람마다 다른 마이크 음색을 비슷하게 맞추는 3밴드 보정."""
-    try:
-        lo = float(row.get("eq_low") or 0)
-        mi = float(row.get("eq_mid") or 0)
-        hi = float(row.get("eq_high") or 0)
-    except (TypeError, ValueError):
-        return ""
-    out = []
-    if abs(lo) > 0.05: out.append(f"equalizer=f=180:t=q:w=0.9:g={lo:.1f}")
-    if abs(mi) > 0.05: out.append(f"equalizer=f=1100:t=q:w=1.1:g={mi:.1f}")
-    if abs(hi) > 0.05: out.append(f"equalizer=f=5000:t=q:w=0.9:g={hi:.1f}")
-    return (",".join(out) + ",") if out else ""
-
-
-def clean_of(row):
-    try: return CLEAN_CHAIN.get(int(row.get("clean") or 0), "")
-    except (TypeError, ValueError): return ""
-
-
-def probe_dur(path):
-    """영상 길이(초)를 잰다 — ffprobe 없이 ffmpeg 출력에서 읽는다"""
-    out = subprocess.run([FF, "-hide_banner", "-i", path],
-                         capture_output=True, text=True).stderr
-    m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", out)
-    if not m: return 6.0
-    h, mi, se = int(m.group(1)), int(m.group(2)), float(m.group(3))
-    return h * 3600 + mi * 60 + se
-
-
-ins, filt, mixn = [], [], []
-if bed:
-    ins += ["-i", bed]
-else:
-    ins += ["-i", video]        # 원본 소리를 깔개로
 filt.append(f"[0:a]{bgm_filter()},aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[bed]")
 if BGM_RANGES:
     print("  배경음악 구간별 크기: " + ", ".join(f"{a:g}–{b:g}초 {v:g}배" for a, b, v in BGM_RANGES)
