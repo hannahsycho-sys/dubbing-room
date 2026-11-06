@@ -220,6 +220,8 @@ tr.editrow>td{background:var(--panel2);border-top:0;padding:14px 16px 16px}
   cursor:grab;box-shadow:0 1px 0 rgba(0,0,0,.4);user-select:none;touch-action:none}
 .teblk.sel{outline:2px solid #fff;outline-offset:1px}
 .teblk.bad{background:var(--rec);color:#fff}
+.teblk.locked{background:#2f6b4f;color:#eafff4;box-shadow:inset 0 0 0 1px #7fe0b0}
+.teblk.locked.bad{background:#2f6b4f}
 .teblk .teh{position:absolute;top:0;bottom:0;width:8px;cursor:ew-resize;background:rgba(0,0,0,.25)}
 .teblk .teh.l{left:0;border-radius:4px 0 0 4px} .teblk .teh.r{right:0;border-radius:0 4px 4px 0}
 .tetick{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.07)}
@@ -1120,7 +1122,25 @@ function drawCues(){
         const play=document.createElement("button");
         play.className="tk tkplay";
         play.textContent=`▶ ${i+1}번${t.dur?` · ${t.dur.toFixed(1)}초`:""}${picked?"  (제출본)":""}`;
-        play.onclick=()=>{stopAll();mineA=voiceAudio(t.url);mineA.play()};
+        /* 재생이 안 되면 조용히 끝나지 않게 — 서버에 올라간 같은 녹음으로 대신 틀고,
+           그것도 안 되면 이유를 알려 준다. */
+        play.onclick=async()=>{
+          stopAll();
+          const 서버=subs.find(x=>x.line_id===l.id);
+          const 시도=async(src,why)=>{
+            try{
+              mineA=voiceAudio(src);
+              await mineA.play();
+              return true;
+            }catch(e){ console.warn("재생 실패("+why+")",e); return false }
+          };
+          if(await 시도(t.url,"이 기기에 저장된 것"))return;
+          if(서버 && await 시도(pub(서버.path),"서버에 올라간 것")){
+            say("이 기기에 저장된 녹음을 열지 못해 <b>올라간 녹음</b>으로 들려드립니다.");
+            return;
+          }
+          say("녹음을 재생하지 못했습니다. 브라우저를 새로고침한 뒤 다시 눌러 보세요.",1);
+        };
         const del=document.createElement("button");
         del.className="tk tkdel";del.textContent="✕";del.title="이 테이크만 지우기";
         del.onclick=()=>delTake(l,i);
@@ -2270,6 +2290,28 @@ function normalizeBuffer(buf){
    (앞의 잡음·묵음을 걷어내면 저절로 제자리를 찾아가게 하려는 것) */
 let autoSync=true;
 try{ autoSync = localStorage.getItem("dubroom:autosync")!=="0" }catch(e){}
+/* ===== 확정 =====
+   손으로 맞춰 둔 줄에 자물쇠를 걸어 둔다. 자동 정리 버튼들
+   (앞뒤 정리 / 싱크 맞추기 / 겹침 자동 정리 / 길이 맞추기 / 목소리 맞추기)
+   은 확정된 줄을 건드리지 않는다. 손으로 조절하는 것은 그대로 된다. */
+const LOCKED=s=>!!(s&&s.locked);
+const lockedCount=()=>subs.filter(x=>x.locked).length;
+
+async function setLocked(s,on){
+  const {error}=await sb.from("submissions").update({locked:!!on}).eq("id",s.id);
+  if(error){
+    const msg=/locked/.test(error.message||"")
+      ? `확정 기능을 쓰려면 Supabase \u2192 SQL Editor 에서 한 줄 실행하세요:<br>
+         <code>alter table public.submissions add column if not exists locked boolean not null default false;</code>`
+      : `<b style="color:var(--rec)">확정 저장 실패: ${esc(error.message)}</b>`;
+    const el=$("#aNote"); if(el)el.innerHTML=msg; else prog(0,msg);
+    return false;
+  }
+  s.locked=!!on;
+  const row=subs.find(x=>x.id===s.id); if(row)row.locked=!!on;
+  return true;
+}
+
 function trimPatch(row,newTs,newTe){
   const p={};
   if(newTs!=null)p.trim_s=+(+newTs).toFixed(3);
@@ -2553,6 +2595,22 @@ function teOpen(){
     link("⏱ 길이 맞추기","#aFit","말 길이를 대사 칸에 맞춰 속도를 조금 조정한다"),
     link("↺","#aFitUndo","길이 맞추기 되돌리기"));
 
+  /* 확정된 줄이 몇 개인지 한눈에 — 자물쇠를 한꺼번에 풀 수도 있다 */
+  const lk=document.createElement("span");
+  lk.id="teLockInfo"; lk.style.cssText="font-size:12px;color:#7fe0b0;cursor:pointer";
+  lk.title="확정된 줄은 위 자동 정리 버튼들이 건드리지 않습니다. 눌러서 한꺼번에 풀 수 있습니다";
+  lk.onclick=async()=>{
+    const 잠긴=subs.filter(x=>x.locked);
+    if(!잠긴.length)return;
+    if(!confirm(`확정해 둔 ${잠긴.length}줄을 전부 풀까요?`))return;
+    lk.style.pointerEvents="none";
+    for(const r of 잠긴) await setLocked(r,false);
+    lk.style.pointerEvents="";
+    teLockInfo(); teDraw(); if(TE&&TE.sel)teSelect(TE.sel,true);
+  };
+  bulk.append(lk);
+  teLockInfo();
+
   $("#teBed").onchange=e=>{
     TE.bedOn=e.target.checked;
     if(TE.bed){
@@ -2643,12 +2701,14 @@ function teDraw(){
     lane.append(lab);
     for(const it of items){
       const b=document.createElement("div");
-      b.className="teblk"+(over.has(it.l.id)?" bad":"");
+      b.className="teblk"+(over.has(it.l.id)?" bad":"")+(LOCKED(it.s)?" locked":"");
       b.style.left=(teAt(it)*TE.px)+"px";
       b.style.width=Math.max(14,teDur(it)*TE.px)+"px";
       b.textContent=`${it.l.id} ${it.l.char}`;
-      b.title=`${it.l.id}번 ${it.l.char} — ${it.l.text.slice(0,40)}`;
-      b.innerHTML+=`<span class="teh l"></span><span class="teh r"></span>`;
+      b.title=`${it.l.id}번 ${it.l.char} — ${it.l.text.slice(0,40)}`
+             +(LOCKED(it.s)?"  (확정 — 자동 정리가 건드리지 않습니다)":"");
+      b.innerHTML+=(LOCKED(it.s)?` <span style="opacity:.85">\u{1F512}</span>`:"")
+                  +`<span class="teh l"></span><span class="teh r"></span>`;
       teDrag(b,it);
       b.addEventListener("click",()=>teSelect(it));
       lane.append(b);
@@ -2688,6 +2748,12 @@ function teTick(){
   TE.raf=requestAnimationFrame(teTick);
 }
 
+function teLockInfo(){
+  const el=$("#teLockInfo"); if(!el)return;
+  const n=lockedCount();
+  el.innerHTML = n ? `\u{1F512} 확정 ${n}줄 — 자동 정리가 건너뜁니다 <u>전부 풀기</u>` : "";
+}
+
 function teSelect(it,noSeek){
   if(!TE)return;
   stopNotePrev();
@@ -2711,7 +2777,8 @@ function teSelect(it,noSeek){
     const g=document.createElement("div"); g.className="tegrp";
     const b=document.createElement("b"); b.textContent=title; g.append(b,...els); return g;
   };
-  box.append(grp("싱크", mkNudge(it.l,it.s,after)),
+  box.append(grp("확정", mkLock(it.l,it.s,()=>{teLockInfo(); teDraw(); teSelect(it,true)})),
+             grp("싱크", mkNudge(it.l,it.s,after)),
              grp("볼륨", mkLineGain(it.l,it.s,after)),
              grp("음질", mkLineClean(it.l,it.s,after)),
              grp("말 속도", mkLineSpeed(it.l,it.s,after)),
@@ -2992,9 +3059,10 @@ $("#aFit").onclick=async()=>{
     if(!items.length)throw new Error("제출된 녹음이 없습니다.");
     const snap=items.map(x=>({id:x.s.id,line_id:x.l.id,speed:+x.s.speed||1}));
 
-    const 적용=[], 건너뜀=[];
+    const 적용=[], 건너뜀=[]; let 잠김=0;
     for(let i=0;i<items.length;i++){
       const it=items[i];
+      if(LOCKED(it.s)){ 잠김++; continue }
       prog(i/items.length*80,`말 길이를 재는 중… ${i+1} / ${items.length}`);
       let buf;
       try{
@@ -3019,6 +3087,7 @@ $("#aFit").onclick=async()=>{
     progDone(`<b>${적용.length}줄</b>의 말 길이를 대사 칸에 맞췄습니다 — ${적용.slice(0,8).map(esc).join(", ")}${적용.length>8?" …":""}.`
       + (건너뜀.length ? `<br>건드리지 않은 ${건너뜀.length}줄: ${건너뜀.slice(0,6).map(esc).join(", ")}${건너뜀.length>6?" …":""}
            — 짧은 감탄사거나 차이가 너무 커서 <b>다시 녹음</b>하는 편이 낫습니다.` : "")
+      + (잠김 ? `<br><b style="color:#7fe0b0">\u{1F512} 확정된 ${잠김}줄</b> 은 건드리지 않았습니다.` : "")
       + ` 마음에 안 들면 <b>↺ 길이 맞추기 되돌리기</b>.`);
   }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
   b.disabled=false;
@@ -3059,7 +3128,7 @@ $("#aSnap").onclick=async()=>{
 
     /* 코치님 말 길이가 대사 칸과 다를 때, 시작만 맞추면 뒤로 갈수록 입과 어긋난다.
        말을 칸 한가운데에 놓아 어긋남을 앞뒤로 나눠 갖게 한다. */
-    const plan=[]; let prevEnd=-9;
+    const plan=[]; let prevEnd=-9, 잠김=0;
     for(let i=0;i<items.length;i++){
       const it=items[i];
       prog(i/items.length*80,`말 길이를 재는 중… ${i+1} / ${items.length}`);
@@ -3082,11 +3151,23 @@ $("#aSnap").onclick=async()=>{
       말시작=Math.min(말시작, Math.max(it.l.s, 다음-말-0.06));
       prevEnd=말시작+말;
 
+      /* 확정된 줄은 손대지 않는다 — 다만 지금 놓여 있는 자리를 기준으로
+         다음 줄이 겹치지 않게 prevEnd 만 고쳐 놓는다 */
+      if(LOCKED(it.s)){
+        잠김++;
+        prevEnd=it.l.s+(+it.s.offset_ms||0)/1000+앞여백+말;
+        continue;
+      }
       const ofs=Math.max(-3000,Math.min(3000,Math.round((말시작-앞여백-it.l.s)*1000)));
       if(Math.abs(ofs-(+it.s.offset_ms||0))>=1) plan.push({it, ofs});
     }
 
-    if(!plan.length){ progDone("이미 모든 대사가 제자리에 있습니다."); b.disabled=false; return }
+    if(!plan.length){
+      progDone(잠김===items.length
+        ? `${잠김}줄 모두 \u{1F512} 확정된 상태라 건드리지 않았습니다.`
+        : "이미 모든 대사가 제자리에 있습니다."+(잠김?` (확정된 ${잠김}줄 제외)`:""));
+      b.disabled=false; return;
+    }
     prog(88,"맞추는 중…");
     for(const p2 of plan){
       const {error}=await sb.from("submissions").update({offset_ms:p2.ofs}).eq("id",p2.it.s.id);
@@ -3098,7 +3179,8 @@ $("#aSnap").onclick=async()=>{
     mixBufs.clear(); drawAdmin();
     progDone(`<b>${plan.length}줄</b>의 싱크를 맞췄습니다 — 말이 대사 칸 가운데에 오도록 놓아,
       앞뒤 어긋남을 나눠 가집니다. 길이 차이가 큰 줄은 <b>⏱ 길이 맞추기</b> 를 같이 쓰면 더 잘 맞습니다.
-      마음에 안 들면 <b>↺ 싱크 맞추기 되돌리기</b>.`);
+      마음에 안 들면 <b>↺ 싱크 맞추기 되돌리기</b>.`
+      + (잠김 ? `<br><b style="color:#7fe0b0">\u{1F512} 확정된 ${잠김}줄</b> 은 건드리지 않았습니다.` : ""));
   }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
   b.disabled=false;
 };
@@ -3182,9 +3264,10 @@ $("#aCut").onclick=async()=>{
     const snap=items.map(x=>({id:x.s.id,line_id:x.l.id,
       trim_s:+x.s.trim_s||0, trim_e:+x.s.trim_e||0, offset_ms:+x.s.offset_ms||0}));
 
-    const found=[];
+    const found=[]; let 잠김=0;
     for(let i=0;i<items.length;i++){
       const it=items[i];
+      if(LOCKED(it.s)){ 잠김++; continue }
       prog(i/items.length*80,`앞부분을 살펴보는 중… ${i+1} / ${items.length}`);
       let buf;
       try{
@@ -3199,7 +3282,10 @@ $("#aCut").onclick=async()=>{
         found.push({it, on:+on.toFixed(2), te:+tailCut.toFixed(2)});
     }
 
-    if(!found.length){ progDone("앞에 잘라낼 잡음이 있는 녹음은 없었습니다."); b.disabled=false; return }
+    if(!found.length){
+      progDone("앞에 잘라낼 잡음이 있는 녹음은 없었습니다."+(잠김?` (\u{1F512} 확정된 ${잠김}줄 제외)`:""));
+      b.disabled=false; return;
+    }
 
     prog(88,"잘라내는 중…");
     for(const f of found){
@@ -3217,7 +3303,8 @@ $("#aCut").onclick=async()=>{
       + found.slice(0,6).map(f=>`${f.it.l.id}번 앞${f.on.toFixed(2)}s·뒤${f.te.toFixed(2)}s`).join(", ")
       + (found.length>6?" …":"")
       + `<br>잘라낸 줄은 <b>대사 시작 시각에 맞춰</b> 싱크를 0 으로 놓았습니다.
-         마음에 안 들면 <b>↺ 되돌리기</b>.`);
+         마음에 안 들면 <b>↺ 되돌리기</b>.`
+      + (잠김 ? `<br><b style="color:#7fe0b0">\u{1F512} 확정된 ${잠김}줄</b> 은 건드리지 않았습니다.` : ""));
   }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
   b.disabled=false;
 };
@@ -3319,7 +3406,7 @@ $("#aMatch").onclick=async()=>{
     const tBand=[0,1,2].map(i=>med(ok.map(p=>info[p].band[i])));
 
     prog(85,"설정을 저장하는 중…");
-    let changed=0; const report=[];
+    let changed=0, 잠김=0; const report=[];
     for(const p of ok){
       const f=info[p];
       const gain=Math.max(-12,Math.min(12, +(20*Math.log10(tRms/Math.max(f.rms,1e-6))).toFixed(1)));
@@ -3330,8 +3417,14 @@ $("#aMatch").onclick=async()=>{
         return Math.max(-6,Math.min(6,+(d*0.6).toFixed(1)));   // 절반 정도만 당긴다
       });
       const patch={gain_db:gain, clean, eq_low:eq[0], eq_mid:eq[1], eq_high:eq[2]};
-      const {error}=await sb.from("submissions").update(patch)
-        .eq("project",PROJECT.key).eq("person",p);
+      /* 목소리 기준은 그 사람의 모든 녹음으로 재되, \u{1F512} 확정된 줄에는 쓰지 않는다 */
+      const 잠긴줄=subs.filter(x=>x.person===p&&x.locked).map(x=>x.id)
+                   .concat(notes.filter(x=>x.person===p&&x.locked).map(x=>x.id));
+      잠김+=잠긴줄.length;
+      const q=sb.from("submissions").update(patch);
+      const {error}= 잠긴줄.length
+        ? await q.eq("project",PROJECT.key).eq("person",p).not("id","in","("+잠긴줄.join(",")+")")
+        : await q.eq("project",PROJECT.key).eq("person",p);
       if(error){
         prog(0, /eq_low/.test(error.message||"")
           ? `음색 보정을 쓰려면 Supabase → SQL Editor 에서 실행하세요:<br>
@@ -3341,8 +3434,8 @@ $("#aMatch").onclick=async()=>{
           : `<b style="color:var(--rec)">저장 실패: ${esc(error.message)}</b>`);
         b.disabled=false; return;
       }
-      subs.forEach(x=>{ if(x.person===p) Object.assign(x,patch) });
-      notes.forEach(x=>{ if(x.person===p) Object.assign(x,patch) });
+      subs.forEach(x=>{ if(x.person===p && !x.locked) Object.assign(x,patch) });
+      notes.forEach(x=>{ if(x.person===p && !x.locked) Object.assign(x,patch) });
       changed++;
       report.push(`${p} ${gain>0?"+":""}${gain}dB · 잡음 ${CLEAN_NAMES[clean]}`);
     }
@@ -3353,7 +3446,8 @@ $("#aMatch").onclick=async()=>{
     progDone(`<b>${changed}명</b>의 목소리를 같은 기준으로 맞췄습니다.<br>`
       + report.map(esc).join(" / ")
       + `<br>이제 <b>▶ 합본 들어보기</b> 로 확인하시고, 참가자 현황에서 직접 더 손보셔도 됩니다.
-         마음에 안 들면 <b>↺ 맞추기 되돌리기</b>.`);
+         마음에 안 들면 <b>↺ 맞추기 되돌리기</b>.`
+      + (잠김 ? `<br><b style="color:#7fe0b0">\u{1F512} 확정된 ${잠김}줄</b> 은 건드리지 않았습니다.` : ""));
   }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
   b.disabled=false;
 };
@@ -3420,13 +3514,15 @@ $("#aAuto").onclick=async()=>{
 
     /* 자르기는 ✂ 앞뒤 정리 가 맡는다. 여기서는 '지금 설정 기준' 길이만 재서
        싱크를 앞으로 당겨 겹침을 줄인다 (뒤로는 밀지 않는다 — 애니와 어긋난다). */
-    const outs=[]; let prevEnd=-9;
+    const outs=[]; let prevEnd=-9, 잠김=0;
     for(let i=0;i<rec.length;i++){
       const {l,s}=rec[i];
       const raw=+s.dur||0;
       const sp=Math.max(0.5,+s.speed||1);
       const dur=Math.max(0.2,(raw-(+s.trim_s||0)-(+s.trim_e||0))/sp);
       const nxt = i+1<rec.length ? rec[i+1].l.s : PROJECT.dubEnd;
+      /* 확정된 줄은 그 자리에 둔다 — 다음 줄 계산에만 쓴다 */
+      if(LOCKED(s)){ 잠김++; prevEnd=l.s+(+s.offset_ms||0)/1000+dur; outs.push(null); continue }
       const need=(l.s+dur)-(nxt-AF_GAP);
       const pull=Math.max(0,Math.min(need,AF_MAXPULL));
       let st=Math.max(l.s-pull, prevEnd+AF_GAP);
@@ -3459,6 +3555,7 @@ $("#aAuto").onclick=async()=>{
         + left.slice(0,6).map(o=>`${o.line_id}번(${esc(o.person)}) ${o.left.toFixed(2)}초`).join(", ")
         + `. 이 줄들은 <b>말 속도</b>를 조금 올리거나 다시 녹음해야 합니다.`
         : " 겹침이 모두 해소됐습니다.")
+      + (잠김 ? `<br><b style="color:#7fe0b0">\u{1F512} 확정된 ${잠김}줄</b> 은 건드리지 않았습니다.` : "")
       + ` 마음에 안 들면 <b>↺ 자동 정리 되돌리기</b> 를 누르세요.`);
   }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
   b.disabled=false;
@@ -3812,6 +3909,27 @@ function mkGain(person){
 
 /* 싱크 미세조정 — 녹음이 조금 빠르거나 늦으면 밀고 당긴다.
    원본 녹음은 건드리지 않고 '몇 ms 옮길지' 만 저장한다. */
+/* 🔒 확정 — 눌러 두면 자동 정리 버튼들이 이 줄을 건너뛴다 */
+function mkLock(l,s,after){
+  const box=document.createElement("div"); box.className="nudge";
+  const b=document.createElement("button"); b.className="mini";
+  const note=document.createElement("span");
+  note.style.cssText="font-size:11.5px;color:var(--dim)";
+  const paint=()=>{
+    const on=LOCKED(s);
+    b.textContent = on ? "\u{1F512} 확정됨 — 풀기" : "\u{1F513} 확정하기";
+    b.style.color = on ? "#7fe0b0" : "";
+    note.textContent = on ? "자동 정리가 이 줄을 건드리지 않습니다"
+                          : "맞춰 둔 줄은 확정해 두세요";
+  };
+  b.onclick=async()=>{
+    b.disabled=true;
+    if(await setLocked(s,!LOCKED(s))){ paint(); after&&after(); }
+    b.disabled=false;
+  };
+  paint(); box.append(b,note); return box;
+}
+
 function mkNudge(l,s,after){
   const box=document.createElement("div"); box.className="nudge";
   const cur=()=>(subs.find(x=>x.line_id===l.id)?.offset_ms)||0;

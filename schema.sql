@@ -27,6 +27,7 @@ create table if not exists public.submissions (
   eq_mid      real        not null default 0,   -- 음색 보정 중음 (dB)
   eq_high     real        not null default 0,   -- 음색 보정 고음 (dB)
   speed       real        not null default 1,   -- 말 속도 (1=원래, 1.2=20% 빠르게)
+  locked      boolean     not null default false, -- 확정 (자동 정리가 건드리지 않음)
   created_at  timestamptz not null default now()
 );
 -- 이미 만들어 둔 표에 칸만 추가할 때
@@ -39,6 +40,7 @@ alter table public.submissions add column if not exists eq_low  real not null de
 alter table public.submissions add column if not exists eq_mid  real not null default 0;
 alter table public.submissions add column if not exists eq_high real not null default 0;
 alter table public.submissions add column if not exists speed real not null default 1;
+alter table public.submissions add column if not exists locked boolean not null default false;
 create index if not exists submissions_project_idx on public.submissions (project, line_id);
 
 -- 3) 권한
