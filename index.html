@@ -2439,12 +2439,15 @@ function teStop(){
   if(!TE)return;
   TE.srcs.forEach(s=>{try{s.stop()}catch(e){}}); TE.srcs=[];
   try{TE.vid.pause()}catch(e){}
-  if(TE.raf){cancelAnimationFrame(TE.raf);TE.raf=0}
+  try{TE.bed&&TE.bed.pause()}catch(e){}
+  /* 재생바를 움직이는 루프(teTick)는 끄지 않는다 —
+     여기서 끄면 다시 켜지지 않아 바가 0 에 멈춰 있게 된다. 닫을 때만 끈다. */
   TE.playing=false;
   const b=$("#tePlay"); if(b)b.textContent="▶ 재생";
 }
 function teClose(){
   teStop();
+  if(TE&&TE.raf){cancelAnimationFrame(TE.raf);TE.raf=0}
   if(TE&&TE.keys)window.removeEventListener("keydown",TE.keys);
   $("#teWrap")?.remove(); TE=null;
 }
@@ -2524,7 +2527,7 @@ function teOpen(){
   bulk.append(
     link("🎚 목소리 맞추기","#aMatch","크기·잡음·음색을 전원 같은 기준으로"),
     link("↺","#aMatchUndo","맞추기 되돌리기"),
-    link("✨ 겹침 자동 정리","#aAuto","앞묵음을 자르고 앞으로 당겨 겹침을 줄인다"),
+    link("✨ 겹침 자동 정리","#aAuto","싱크만 앞으로 당겨 겹침을 줄인다 (자르기는 건드리지 않음)"),
     link("↺","#aAutoUndo","겹침 정리 되돌리기"),
     link("✂ 앞뒤 정리","#aCut","말이 시작·끝나는 지점을 찾아 앞뒤의 잡음과 묵음을 잘라낸다"),
     link("↺","#aCutUndo","앞뒤 정리 되돌리기"));
@@ -2645,7 +2648,7 @@ function teSub(t){
   el.innerHTML=`<span><b style="color:${c.color}">${esc(l.char)}</b> ${esc(l.text)}</span>`;
 }
 function teTick(){
-  if(!TE)return;
+  if(!TE||!$("#teWrap")){ if(TE)TE.raf=0; return }
   teHead();
   if(TE.playing){
     const sc=$("#teScroll");
@@ -2763,46 +2766,45 @@ async function teSeek(t){
 async function tePlay(){
   if(!TE)return;
   teStop();
-  /* 목소리를 푸는 데 시간이 걸리면 '누른 지 오래' 가 되어 브라우저가 재생을 막는다.
-     누른 직후에 한 번 틀었다 멈춰서 재생 권한을 먼저 확보해 둔다. */
-  try{ await TE.vid.play(); TE.vid.pause(); }catch(e){}
   TE.ctx=TE.ctx||new (window.AudioContext||webkitAudioContext)();
   if(TE.ctx.state==="suspended")await TE.ctx.resume().catch(()=>{});
-  const t0=TE.vid.currentTime;
-  const items=teLanes().flatMap(([,v])=>v);
 
-  $("#tePlay").textContent="준비 중…";
-  for(const it of items){
-    const key=mixKey(pub(it.s.path),it.s);
-    if(!TE.bufs.has(key)){
-      try{ TE.bufs.set(key, await voiceBuffer(it.l, pub(it.s.path))); }
-      catch(e){ console.warn("목소리 준비 실패",it.l.id,e); }
-    }
-  }
-  $("#tePlay").textContent="■ 멈춤";
-
+  /* 영상을 먼저 띄우고, 목소리는 준비되는 대로 끼워 넣는다.
+     30개를 다 풀 때까지 기다리면 네트워크가 느릴 때 한참 멈춰 있게 된다. */
   let 막힘=null;
   await TE.vid.play().catch(e=>{막힘=e.name});
   if(막힘 || TE.vid.paused){
     $("#tePlay").textContent="▶ 재생";
     $("#teSel").innerHTML=`<b style="color:var(--rec)">영상을 재생하지 못했습니다</b>
-      — 한 번 더 눌러 주세요. (브라우저가 자동 재생을 막는 경우가 있습니다)`;
+      — 한 번 더 눌러 주세요.`;
     TE.playing=false; return;
   }
-  if(TE.bed){ TE.bed.currentTime=TE.vid.currentTime; TE.bed.play().catch(()=>{}) }
-  const base=TE.ctx.currentTime;
+  if(TE.bed){ try{TE.bed.currentTime=TE.vid.currentTime; TE.bed.play().catch(()=>{})}catch(e){} }
+  TE.playing=true;
+  $("#tePlay").textContent="■ 멈춤";
+  if(!TE.raf) teTick();                       // 혹시 멈춰 있으면 다시 돌린다
+
+  const items=teLanes().flatMap(([,v])=>v);
+  let 준비=0;
   for(const it of items){
-    const buf=TE.bufs.get(mixKey(pub(it.s.path),it.s)); if(!buf)continue;
-    const at=teAt(it), end=at+buf.duration;
-    if(end<=t0)continue;
+    if(!TE||!TE.playing)return;                    // 그새 멈췄다
+    let buf;
+    try{ buf=await voiceBuffer(it.l, pub(it.s.path)) }
+    catch(e){ console.warn("목소리 준비 실패",it.l.id,e); continue }
+    if(!TE||!TE.playing)return;
+    준비++;
+    const now=TE.vid.currentTime, at=teAt(it);
+    if(at+buf.duration<=now) continue;              // 이미 지나간 대사
     const src=TE.ctx.createBufferSource(); src.buffer=buf;
     const g=TE.ctx.createGain(); g.gain.value=dbToMul(gainOf(it.l.id));
     src.connect(g).connect(TE.ctx.destination);
-    if(at>=t0) src.start(base+(at-t0));
-    else       src.start(base, t0-at);
-    TE.srcs.push(src);
+    const lead=at-now;
+    try{
+      if(lead>=0) src.start(TE.ctx.currentTime+lead);
+      else        src.start(TE.ctx.currentTime, -lead);
+      TE.srcs.push(src);
+    }catch(e){}
   }
-  TE.playing=true;
 }
 
 function teDrag(el,it){
@@ -3176,7 +3178,7 @@ $("#aMatchUndo").onclick=async()=>{
                        밀면 애니와 어긋나고 다음 사람까지 줄줄이 밀린다)
    되돌릴 수 있게 바꾸기 전 값을 저장해 둔다. */
 const AUTOKEY=()=>`dubroom:autofix:${PROJECT.key}`;
-const AF_GAP=0.06, AF_MAXPULL=0.8;
+const AF_GAP=0.06, AF_MAXPULL=0.5;   // 너무 많이 당기면 대사가 빨리 나와 어색해진다
 
 async function measureTake(path){
   const ctx=new (window.AudioContext||webkitAudioContext)();
@@ -3205,30 +3207,26 @@ $("#aAuto").onclick=async()=>{
       .filter(x=>x.s).sort((a,c)=>a.l.s-c.l.s);
     if(!rec.length)throw new Error("제출된 녹음이 없습니다.");
 
-    const snap=rec.map(x=>({id:x.s.id, line_id:x.l.id,
-      offset_ms:+x.s.offset_ms||0, trim_s:+x.s.trim_s||0}));
+    const snap=rec.map(x=>({id:x.s.id, line_id:x.l.id, offset_ms:+x.s.offset_ms||0}));
 
-    const meas=[];
-    for(let i=0;i<rec.length;i++){
-      prog(i/rec.length*70, `녹음을 살펴보는 중… ${i+1} / ${rec.length}`);
-      meas.push(await measureTake(rec[i].s.path));
-    }
-
-    /* 앞으로만 당긴다 — 뒤로 밀면 애니와 어긋난다 */
+    /* 자르기는 ✂ 앞뒤 정리 가 맡는다. 여기서는 '지금 설정 기준' 길이만 재서
+       싱크를 앞으로 당겨 겹침을 줄인다 (뒤로는 밀지 않는다 — 애니와 어긋난다). */
     const outs=[]; let prevEnd=-9;
     for(let i=0;i<rec.length;i++){
-      const {l,s}=rec[i], m=meas[i];
-      if(!m){ outs.push(null); continue }
+      const {l,s}=rec[i];
+      const raw=+s.dur||0;
+      const sp=Math.max(0.5,+s.speed||1);
+      const dur=Math.max(0.2,(raw-(+s.trim_s||0)-(+s.trim_e||0))/sp);
       const nxt = i+1<rec.length ? rec[i+1].l.s : PROJECT.dubEnd;
-      const need = (l.s + m.dur) - (nxt - AF_GAP);
-      const pull = Math.max(0, Math.min(need, AF_MAXPULL));
-      let start = Math.max(l.s - pull, prevEnd + AF_GAP);
-      start = Math.min(start, l.s);                 // 절대 뒤로 밀지 않는다
-      prevEnd = start + m.dur;
+      const need=(l.s+dur)-(nxt-AF_GAP);
+      const pull=Math.max(0,Math.min(need,AF_MAXPULL));
+      let st=Math.max(l.s-pull, prevEnd+AF_GAP);
+      st=Math.min(st,l.s);                       // 절대 뒤로 밀지 않는다
+      prevEnd=st+dur;
       outs.push({id:s.id, line_id:l.id, person:s.person,
-                 offset_ms:Math.round((start-l.s)*1000),
-                 trim_s:+m.lead.toFixed(2),
-                 left:+(start+m.dur-nxt).toFixed(2)});
+                 offset_ms:Math.round((st-l.s)*1000),
+                 left:+(st+dur-nxt).toFixed(2)});
+      prog(i/rec.length*75,`겹침을 계산하는 중… ${i+1} / ${rec.length}`);
     }
 
     prog(80,"설정을 저장하는 중…");
@@ -3236,21 +3234,21 @@ $("#aAuto").onclick=async()=>{
     for(const o of outs){
       if(!o)continue;
       const cur=subs.find(x=>x.line_id===o.line_id);
-      if(Math.abs((+cur.offset_ms||0)-o.offset_ms)<1 && Math.abs((+cur.trim_s||0)-o.trim_s)<0.01) continue;
+      if(Math.abs((+cur.offset_ms||0)-o.offset_ms)<1) continue;
       const {error}=await sb.from("submissions")
-        .update({offset_ms:o.offset_ms, trim_s:o.trim_s}).eq("id",o.id);
+        .update({offset_ms:o.offset_ms}).eq("id",o.id);
       if(error){ prog(0,`<b style="color:var(--rec)">저장 실패: ${esc(error.message)}</b>`); b.disabled=false; return }
-      cur.offset_ms=o.offset_ms; cur.trim_s=o.trim_s; changed++;
+      cur.offset_ms=o.offset_ms; changed++;
     }
     try{ localStorage.setItem(AUTOKEY(), JSON.stringify(snap)) }catch(e){}
     $("#aAutoUndo").classList.remove("hide");
 
     const left=outs.filter(o=>o&&o.left>0.15);
     drawAdmin();
-    progDone(`<b>${changed}줄</b> 을 정리했습니다.` +
+    progDone(`<b>${changed}줄</b>의 싱크를 당겨 겹침을 줄였습니다 (최대 ${AF_MAXPULL}초).` +
       (left.length ? ` 아직 <b>${left.length}줄</b> 은 녹음이 길어 겹침이 남습니다 — `
         + left.slice(0,6).map(o=>`${o.line_id}번(${esc(o.person)}) ${o.left.toFixed(2)}초`).join(", ")
-        + `. 이 줄들은 다시 녹음하거나 <b>✎ 편집</b> 에서 뒤를 조금 잘라야 합니다.`
+        + `. 이 줄들은 <b>말 속도</b>를 조금 올리거나 다시 녹음해야 합니다.`
         : " 겹침이 모두 해소됐습니다.")
       + ` 마음에 안 들면 <b>↺ 자동 정리 되돌리기</b> 를 누르세요.`);
   }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
@@ -3266,10 +3264,10 @@ $("#aAutoUndo").onclick=async()=>{
       prog(i/snap.length*95,`되돌리는 중… ${i+1} / ${snap.length}`);
       const o=snap[i];
       const {error}=await sb.from("submissions")
-        .update({offset_ms:o.offset_ms, trim_s:o.trim_s}).eq("id",o.id);
+        .update({offset_ms:o.offset_ms}).eq("id",o.id);
       if(error)throw error;
       const cur=subs.find(x=>x.line_id===o.line_id);
-      if(cur){ cur.offset_ms=o.offset_ms; cur.trim_s=o.trim_s }
+      if(cur) cur.offset_ms=o.offset_ms
     }
     try{ localStorage.removeItem(AUTOKEY()) }catch(e){}
     b.classList.add("hide");
