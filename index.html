@@ -512,6 +512,8 @@ tr.justin td{animation:flashin 2.4s ease-out}
       <button class="btn sm alt" id="aZip">⤓ 개별 녹음 모아서 (ZIP)</button>
       <button class="btn sm alt" id="aNoteZip">⤓ 크레딧 소감만 (ZIP)</button>
       <button class="btn sm alt" id="aScan">🔎 타이밍 일괄 점검</button>
+      <button class="btn sm alt" id="aAuto">✨ 겹침 자동 정리</button>
+      <button class="btn sm alt hide" id="aAutoUndo">↺ 자동 정리 되돌리기</button>
       <button class="btn sm alt hide" id="aTime">⏱ 타이밍 맞추기</button>
     </div>
     <div class="balbox">
@@ -2075,6 +2077,10 @@ async function openAdmin(){
 }
 function drawAdmin(){
   stopNotePrev();
+  try{
+    const has=!!JSON.parse(localStorage.getItem(AUTOKEY())||"null");
+    $("#aAutoUndo").classList.toggle("hide", !has);
+  }catch(e){}
   $("#aNote").innerHTML=online
     ? `제출 <b>${subs.length} / ${PROJECT.lines.length}</b> 줄`
        + (notes.length?` · 크레딧 소감 <b>${notes.length}</b>개`:"")
@@ -2258,6 +2264,117 @@ function mkLineGain(l,s,after){
   paint();
   return box;
 }
+
+/* ===== 겹침 자동 정리 =====
+   코치님마다 애니보다 천천히 말씀하셔서 다음 사람 대사를 침범하는 일이 생긴다.
+   녹음 파일은 건드리지 않고 두 가지만 손본다.
+     · 앞묵음 자르기 — 말이 늦게 시작하면 그만큼 버린다 (뒤에 여유가 생긴다)
+     · 싱크 당기기   — 그래도 모자라면 앞으로 당긴다 (뒤로 밀지는 않는다.
+                       밀면 애니와 어긋나고 다음 사람까지 줄줄이 밀린다)
+   되돌릴 수 있게 바꾸기 전 값을 저장해 둔다. */
+const AUTOKEY=()=>`dubroom:autofix:${PROJECT.key}`;
+const AF_GAP=0.06, AF_MAXPULL=0.8;
+
+async function measureTake(path){
+  const ctx=new (window.AudioContext||webkitAudioContext)();
+  try{
+    const buf=await ctx.decodeAudioData(await (await fetch(pub(path))).arrayBuffer());
+    const d=buf.getChannelData(0), sr=buf.sampleRate, win=Math.round(sr*0.05);
+    let peak=0; for(let i=0;i<d.length;i+=7){const v=Math.abs(d[i]); if(v>peak)peak=v}
+    const thr=Math.max(peak*0.06,0.004);
+    let first=-1,last=-1;
+    for(let j=0,k=0;j+win<d.length;j+=win,k++){
+      let sum=0; for(let i=j;i<j+win;i+=3)sum+=d[i]*d[i];
+      if(Math.sqrt(sum/Math.ceil(win/3))>thr){ if(first<0)first=k; last=k; }
+    }
+    if(first<0) return null;
+    const lead=Math.max(0, first*win/sr - 0.05);
+    const end=(last+1)*win/sr;
+    return {lead, dur:Math.max(0.1, end-lead), total:buf.duration};
+  } finally { try{ctx.close()}catch(e){} }
+}
+
+$("#aAuto").onclick=async()=>{
+  const b=$("#aAuto"); b.disabled=true;
+  try{
+    const rec=PROJECT.lines
+      .map(l=>({l, s:subs.find(x=>x.line_id===l.id)}))
+      .filter(x=>x.s).sort((a,c)=>a.l.s-c.l.s);
+    if(!rec.length)throw new Error("제출된 녹음이 없습니다.");
+
+    const snap=rec.map(x=>({id:x.s.id, line_id:x.l.id,
+      offset_ms:+x.s.offset_ms||0, trim_s:+x.s.trim_s||0}));
+
+    const meas=[];
+    for(let i=0;i<rec.length;i++){
+      prog(i/rec.length*70, `녹음을 살펴보는 중… ${i+1} / ${rec.length}`);
+      meas.push(await measureTake(rec[i].s.path));
+    }
+
+    /* 앞으로만 당긴다 — 뒤로 밀면 애니와 어긋난다 */
+    const outs=[]; let prevEnd=-9;
+    for(let i=0;i<rec.length;i++){
+      const {l,s}=rec[i], m=meas[i];
+      if(!m){ outs.push(null); continue }
+      const nxt = i+1<rec.length ? rec[i+1].l.s : PROJECT.dubEnd;
+      const need = (l.s + m.dur) - (nxt - AF_GAP);
+      const pull = Math.max(0, Math.min(need, AF_MAXPULL));
+      let start = Math.max(l.s - pull, prevEnd + AF_GAP);
+      start = Math.min(start, l.s);                 // 절대 뒤로 밀지 않는다
+      prevEnd = start + m.dur;
+      outs.push({id:s.id, line_id:l.id, person:s.person,
+                 offset_ms:Math.round((start-l.s)*1000),
+                 trim_s:+m.lead.toFixed(2),
+                 left:+(start+m.dur-nxt).toFixed(2)});
+    }
+
+    prog(80,"설정을 저장하는 중…");
+    let changed=0;
+    for(const o of outs){
+      if(!o)continue;
+      const cur=subs.find(x=>x.line_id===o.line_id);
+      if(Math.abs((+cur.offset_ms||0)-o.offset_ms)<1 && Math.abs((+cur.trim_s||0)-o.trim_s)<0.01) continue;
+      const {error}=await sb.from("submissions")
+        .update({offset_ms:o.offset_ms, trim_s:o.trim_s}).eq("id",o.id);
+      if(error){ prog(0,`<b style="color:var(--rec)">저장 실패: ${esc(error.message)}</b>`); b.disabled=false; return }
+      cur.offset_ms=o.offset_ms; cur.trim_s=o.trim_s; changed++;
+    }
+    try{ localStorage.setItem(AUTOKEY(), JSON.stringify(snap)) }catch(e){}
+    $("#aAutoUndo").classList.remove("hide");
+
+    const left=outs.filter(o=>o&&o.left>0.15);
+    drawAdmin();
+    progDone(`<b>${changed}줄</b> 을 정리했습니다.` +
+      (left.length ? ` 아직 <b>${left.length}줄</b> 은 녹음이 길어 겹침이 남습니다 — `
+        + left.slice(0,6).map(o=>`${o.line_id}번(${esc(o.person)}) ${o.left.toFixed(2)}초`).join(", ")
+        + `. 이 줄들은 다시 녹음하거나 <b>✎ 편집</b> 에서 뒤를 조금 잘라야 합니다.`
+        : " 겹침이 모두 해소됐습니다.")
+      + ` 마음에 안 들면 <b>↺ 자동 정리 되돌리기</b> 를 누르세요.`);
+  }catch(e){ prog(0,`<b style="color:var(--rec)">실패: ${esc(e.message||e)}</b>`) }
+  b.disabled=false;
+};
+
+$("#aAutoUndo").onclick=async()=>{
+  const b=$("#aAutoUndo"); b.disabled=true;
+  try{
+    const snap=JSON.parse(localStorage.getItem(AUTOKEY())||"null");
+    if(!snap||!snap.length)throw new Error("되돌릴 기록이 없습니다.");
+    for(let i=0;i<snap.length;i++){
+      prog(i/snap.length*95,`되돌리는 중… ${i+1} / ${snap.length}`);
+      const o=snap[i];
+      const {error}=await sb.from("submissions")
+        .update({offset_ms:o.offset_ms, trim_s:o.trim_s}).eq("id",o.id);
+      if(error)throw error;
+      const cur=subs.find(x=>x.line_id===o.line_id);
+      if(cur){ cur.offset_ms=o.offset_ms; cur.trim_s=o.trim_s }
+    }
+    try{ localStorage.removeItem(AUTOKEY()) }catch(e){}
+    b.classList.add("hide");
+    drawAdmin();
+    progDone(`${snap.length}줄을 자동 정리 전으로 되돌렸습니다.`);
+  }catch(e){ prog(0,`<b style="color:var(--rec)">되돌리기 실패: ${esc(e.message||e)}</b>`) }
+  b.disabled=false;
+};
 
 /* 파형을 보면서 손보는 편집 패널.
    표에는 '요약 + ✎ 편집' 만 두고, 실제 조절은 전부 여기로 모았다 —
