@@ -184,6 +184,33 @@ tr.editrow>td{background:var(--panel2);border-top:0;padding:14px 16px 16px}
   box-shadow:0 0 0 1px rgba(0,0,0,.6)}
 .wavebox .trimh span{position:absolute;top:4px;font-size:10px;color:#17150d;background:var(--amber);
   border-radius:3px;padding:1px 4px;font-family:"Courier Prime",monospace}
+/* 전체 편집기 — 영상 + 코치별 트랙 */
+.tebox{border:1px solid var(--line);border-radius:8px;background:var(--panel);
+  padding:14px;margin:0 0 16px}
+.tetop{display:grid;grid-template-columns:420px 1fr;gap:16px;align-items:start}
+@media(max-width:1000px){.tetop{grid-template-columns:1fr}}
+.tetop video{width:100%;aspect-ratio:16/9;background:#000;border-radius:6px;
+  border:1px solid var(--line);display:block}
+.tectl{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.tescroll{overflow-x:auto;overflow-y:hidden;margin-top:12px;border:1px solid var(--line);
+  border-radius:6px;background:#0c0c0a}
+.teinner{position:relative}
+.telane{position:relative;height:34px;border-bottom:1px solid rgba(255,255,255,.05)}
+.telane:last-child{border-bottom:0}
+.telabel{position:sticky;left:0;z-index:4;display:inline-block;padding:0 8px;
+  font-size:11.5px;color:var(--dim);line-height:34px;background:linear-gradient(90deg,#0c0c0a 70%,transparent);
+  pointer-events:none;white-space:nowrap}
+.teblk{position:absolute;top:4px;height:26px;border-radius:4px;background:var(--amber);
+  color:#17150d;font-size:11px;line-height:26px;padding:0 6px;overflow:hidden;white-space:nowrap;
+  cursor:grab;box-shadow:0 1px 0 rgba(0,0,0,.4);user-select:none;touch-action:none}
+.teblk.sel{outline:2px solid #fff;outline-offset:1px}
+.teblk.bad{background:var(--rec);color:#fff}
+.teblk .teh{position:absolute;top:0;bottom:0;width:8px;cursor:ew-resize;background:rgba(0,0,0,.25)}
+.teblk .teh.l{left:0;border-radius:4px 0 0 4px} .teblk .teh.r{right:0;border-radius:0 4px 4px 0}
+.tetick{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.07)}
+.tetime{position:absolute;top:2px;font-size:10px;color:var(--dim)}
+.tehead{position:absolute;top:0;bottom:0;width:2px;background:#fff;z-index:5;pointer-events:none}
+.tehint{margin-top:9px;font-size:12px;color:var(--dim)}
 .edgrid{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start}
 @media(max-width:900px){.edgrid{grid-template-columns:1fr}}
 .edvid{width:100%;aspect-ratio:16/9;background:#000;border-radius:6px;display:block;
@@ -512,6 +539,7 @@ tr.justin td{animation:flashin 2.4s ease-out}
       <button class="btn sm alt" id="aZip">⤓ 개별 녹음 모아서 (ZIP)</button>
       <button class="btn sm alt" id="aNoteZip">⤓ 크레딧 소감만 (ZIP)</button>
       <button class="btn sm alt" id="aScan">🔎 타이밍 일괄 점검</button>
+      <button class="btn sm" id="aTE">🎬 전체 편집</button>
       <button class="btn sm alt" id="aAuto">✨ 겹침 자동 정리</button>
       <button class="btn sm alt hide" id="aAutoUndo">↺ 자동 정리 되돌리기</button>
       <button class="btn sm alt hide" id="aTime">⏱ 타이밍 맞추기</button>
@@ -2287,6 +2315,236 @@ function mkLineGain(l,s,after){
              b("↺",()=>save(0),"0 으로"));
   paint();
   return box;
+}
+
+/* ===== 전체 편집기 =====
+   영상을 보면서 코치별 트랙 위의 블록을 끌어 싱크를, 양끝을 끌어 자르기를 맞춘다.
+   저장되는 값은 편집 패널과 똑같다 (offset_ms / trim_s / trim_e) — 원본은 건드리지 않는다. */
+let TE=null;
+const TE_ZOOMS=[20,40,80,160];
+
+function teStop(){
+  if(!TE)return;
+  TE.srcs.forEach(s=>{try{s.stop()}catch(e){}}); TE.srcs=[];
+  try{TE.vid.pause()}catch(e){}
+  if(TE.raf){cancelAnimationFrame(TE.raf);TE.raf=0}
+  TE.playing=false;
+  const b=$("#tePlay"); if(b)b.textContent="▶ 재생";
+}
+function teClose(){ teStop(); $("#teWrap")?.remove(); TE=null; }
+
+$("#aTE").onclick=()=>{ if($("#teWrap")){teClose();return} teOpen(); };
+
+function teOpen(){
+  const host=$("#aCast");
+  const w=document.createElement("div"); w.className="tebox"; w.id="teWrap";
+  w.innerHTML=`
+    <div class="tetop">
+      <div>
+        <video id="teVid" playsinline preload="auto"></video>
+        <div class="tectl" style="margin-top:9px">
+          <button class="mini" id="tePlay">▶ 재생</button>
+          <span class="mono" id="teTime" style="color:var(--amber);min-width:62px">0:00.0</span>
+          <span style="font-size:12px;color:var(--dim)">확대</span>
+          <button class="mini" id="teZo">－</button><button class="mini" id="teZi">＋</button>
+          <span class="gap" style="flex:1"></span>
+          <button class="mini" id="teClose">✕ 닫기</button>
+        </div>
+      </div>
+      <div>
+        <div id="teSel" style="font-size:12.5px;color:var(--dim);min-height:22px"></div>
+        <div class="edrow" id="teCtl"></div>
+      </div>
+    </div>
+    <div class="tescroll" id="teScroll"><div class="teinner" id="teInner"></div></div>
+    <p class="tehint">블록을 <b style="color:var(--ink)">가로로 끌면 싱크</b>, <b style="color:var(--ink)">양끝을 끌면 자르기</b>입니다.
+      빨간 블록은 다음 사람과 겹치는 줄입니다. 눈금을 누르면 그 자리로 이동합니다.</p>`;
+  host.before(w);
+
+  TE={vid:$("#teVid"), px:40, srcs:[], raf:0, playing:false, sel:null, ctx:null, bufs:new Map()};
+  TE.vid.src=PROJECT.video;
+  TE.vid.muted=!!PROJECT.videoBgm;
+  TE.bed=PROJECT.videoBgm?Object.assign(new Audio(PROJECT.videoBgm),{preload:"auto"}):null;
+
+  $("#teClose").onclick=teClose;
+  $("#tePlay").onclick=()=>TE.playing?teStop():tePlay();
+  $("#teZi").onclick=()=>{const i=TE_ZOOMS.indexOf(TE.px); TE.px=TE_ZOOMS[Math.min(TE_ZOOMS.length-1,i+1)]; teDraw()};
+  $("#teZo").onclick=()=>{const i=TE_ZOOMS.indexOf(TE.px); TE.px=TE_ZOOMS[Math.max(0,i-1)]; teDraw()};
+  teDraw(); teTick();
+}
+
+function teLanes(){
+  const by=new Map();
+  for(const l of PROJECT.lines){
+    const s=subs.find(x=>x.line_id===l.id); if(!s)continue;
+    if(!by.has(s.person))by.set(s.person,[]);
+    by.get(s.person).push({l,s});
+  }
+  return [...by.entries()].sort((a,b)=>Math.min(...a[1].map(x=>x.l.s))-Math.min(...b[1].map(x=>x.l.s)));
+}
+const teDur=it=>{
+  const d=(+it.s.dur||(it.l.e-it.l.s));
+  return Math.max(0.2, d-(+it.s.trim_s||0)-(+it.s.trim_e||0));
+};
+const teAt=it=>it.l.s+(+it.s.offset_ms||0)/1000;
+
+function teDraw(){
+  if(!TE)return;
+  const inner=$("#teInner"), W=PROJECT.dubEnd*TE.px;
+  inner.innerHTML=""; inner.style.width=W+"px";
+
+  const ruler=document.createElement("div"); ruler.className="telane"; ruler.style.height="20px";
+  for(let t=0;t<=PROJECT.dubEnd;t+=5){
+    const k=document.createElement("div"); k.className="tetick"; k.style.left=(t*TE.px)+"px"; ruler.append(k);
+    const lb=document.createElement("span"); lb.className="tetime"; lb.style.left=(t*TE.px+3)+"px";
+    lb.textContent=mmss(t); ruler.append(lb);
+  }
+  ruler.onclick=e=>{ const r=inner.getBoundingClientRect();
+    teSeek(Math.max(0,Math.min(PROJECT.dubEnd,(e.clientX-r.left)/TE.px))) };
+  inner.append(ruler);
+
+  const lanes=teLanes();
+  const all=lanes.flatMap(([,v])=>v).sort((a,b)=>teAt(a)-teAt(b));
+  const over=new Set();
+  for(let i=0;i<all.length-1;i++)
+    if(teAt(all[i])+teDur(all[i]) > teAt(all[i+1])+0.02) over.add(all[i].l.id);
+
+  for(const [person,items] of lanes){
+    const lane=document.createElement("div"); lane.className="telane";
+    const lab=document.createElement("span"); lab.className="telabel"; lab.textContent=person;
+    lane.append(lab);
+    for(const it of items){
+      const b=document.createElement("div");
+      b.className="teblk"+(over.has(it.l.id)?" bad":"");
+      b.style.left=(teAt(it)*TE.px)+"px";
+      b.style.width=Math.max(14,teDur(it)*TE.px)+"px";
+      b.textContent=`${it.l.id} ${it.l.char}`;
+      b.title=`${it.l.id}번 ${it.l.char} — ${it.l.text.slice(0,40)}`;
+      b.innerHTML+=`<span class="teh l"></span><span class="teh r"></span>`;
+      teDrag(b,it);
+      b.addEventListener("click",()=>teSelect(it));
+      lane.append(b);
+    }
+    inner.append(lane);
+  }
+  const head=document.createElement("div"); head.className="tehead"; head.id="teHead";
+  inner.append(head);
+  teHead();
+}
+
+function teHead(){
+  const h=$("#teHead"); if(!h||!TE)return;
+  h.style.left=((TE.vid.currentTime||0)*TE.px)+"px";
+  const t=$("#teTime"); if(t)t.textContent=mmss(TE.vid.currentTime||0);
+}
+function teTick(){
+  if(!TE)return;
+  teHead();
+  if(TE.playing){
+    const sc=$("#teScroll");
+    if(sc){ const x=TE.vid.currentTime*TE.px;
+      if(x<sc.scrollLeft+60||x>sc.scrollLeft+sc.clientWidth-60) sc.scrollLeft=x-sc.clientWidth/2; }
+  }
+  TE.raf=requestAnimationFrame(teTick);
+}
+
+function teSelect(it){
+  if(!TE)return;
+  TE.sel=it;
+  $$("#teInner .teblk").forEach(b=>b.classList.remove("sel"));
+  const blocks=$$("#teInner .teblk");
+  blocks.forEach(b=>{ if(b.textContent.startsWith(it.l.id+" ")) b.classList.add("sel") });
+  $("#teSel").innerHTML=`<b style="color:var(--ink)">${it.l.id}번 ${esc(it.l.char)}</b>
+    · ${esc(it.s.person)} · ${esc(it.l.text.slice(0,46))}`;
+  const box=$("#teCtl"); box.innerHTML="";
+  const after=()=>{ teDraw(); teSelect(it) };
+  const lab=t=>{const x=document.createElement("span");x.className="lab";x.textContent=t;return x};
+  box.append(lab("싱크"), mkNudge(it.l,it.s,after), lab("볼륨"), mkLineGain(it.l,it.s,after),
+             mkLineClean(it.l,it.s,after), mkLinePlay(it.l,it.s));
+}
+
+async function teSeek(t){
+  if(!TE)return;
+  const was=TE.playing; teStop();
+  try{ TE.vid.currentTime=t }catch(e){}
+  if(TE.bed){ try{TE.bed.currentTime=t}catch(e){} }
+  teHead();
+  if(was) tePlay();
+}
+
+async function tePlay(){
+  if(!TE)return;
+  teStop();
+  TE.ctx=TE.ctx||new (window.AudioContext||webkitAudioContext)();
+  if(TE.ctx.state==="suspended")await TE.ctx.resume().catch(()=>{});
+  const t0=TE.vid.currentTime;
+  const items=teLanes().flatMap(([,v])=>v);
+
+  $("#tePlay").textContent="준비 중…";
+  for(const it of items){
+    const key=mixKey(pub(it.s.path),it.s);
+    if(!TE.bufs.has(key)){
+      try{ TE.bufs.set(key, await voiceBuffer(it.l, pub(it.s.path))); }
+      catch(e){ console.warn("목소리 준비 실패",it.l.id,e); }
+    }
+  }
+  $("#tePlay").textContent="■ 멈춤";
+
+  await TE.vid.play().catch(()=>{});
+  if(TE.bed){ TE.bed.currentTime=TE.vid.currentTime; TE.bed.play().catch(()=>{}) }
+  const base=TE.ctx.currentTime;
+  for(const it of items){
+    const buf=TE.bufs.get(mixKey(pub(it.s.path),it.s)); if(!buf)continue;
+    const at=teAt(it), end=at+buf.duration;
+    if(end<=t0)continue;
+    const src=TE.ctx.createBufferSource(); src.buffer=buf;
+    const g=TE.ctx.createGain(); g.gain.value=dbToMul(gainOf(it.l.id));
+    src.connect(g).connect(TE.ctx.destination);
+    if(at>=t0) src.start(base+(at-t0));
+    else       src.start(base, t0-at);
+    TE.srcs.push(src);
+  }
+  TE.playing=true;
+}
+
+function teDrag(el,it){
+  let mode=null, sx=0, startOff=0, startTs=0, startTe=0;
+  el.addEventListener("pointerdown",e=>{
+    e.preventDefault(); e.stopPropagation();
+    teStop();
+    mode = e.target.classList.contains("teh")
+      ? (e.target.classList.contains("l")?"L":"R") : "M";
+    sx=e.clientX;
+    startOff=+it.s.offset_ms||0; startTs=+it.s.trim_s||0; startTe=+it.s.trim_e||0;
+    try{el.setPointerCapture(e.pointerId)}catch(_){}
+  });
+  el.addEventListener("pointermove",e=>{
+    if(!mode)return;
+    const dt=(e.clientX-sx)/TE.px;
+    if(mode==="M"){
+      it.s.offset_ms=Math.max(-3000,Math.min(3000,Math.round(startOff+dt*1000)));
+      el.style.left=(teAt(it)*TE.px)+"px";
+    }else if(mode==="L"){
+      it.s.trim_s=Math.max(0,+(startTs+dt).toFixed(2));
+      el.style.left=(teAt(it)*TE.px)+"px";
+      el.style.width=Math.max(14,teDur(it)*TE.px)+"px";
+    }else{
+      it.s.trim_e=Math.max(0,+(startTe-dt).toFixed(2));
+      el.style.width=Math.max(14,teDur(it)*TE.px)+"px";
+    }
+  });
+  const up=async e=>{
+    if(!mode)return;
+    const m=mode; mode=null;
+    try{el.releasePointerCapture(e.pointerId)}catch(_){}
+    const patch = m==="M" ? {offset_ms:it.s.offset_ms}
+                : m==="L" ? {trim_s:it.s.trim_s} : {trim_e:it.s.trim_e};
+    const {error}=await sb.from("submissions").update(patch).eq("id",it.s.id);
+    if(error){ $("#aNote").innerHTML=`저장 실패: <b>${esc(error.message)}</b>` }
+    teDraw(); teSelect(it);
+  };
+  el.addEventListener("pointerup",up);
+  el.addEventListener("pointercancel",()=>{mode=null});
 }
 
 /* ===== 더빙 들어보기용 목소리 버퍼 =====
