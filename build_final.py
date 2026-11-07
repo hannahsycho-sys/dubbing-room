@@ -267,9 +267,18 @@ def eq_of(row):
     return (",".join(out) + ",") if out else ""
 
 
+# afftdn 은 소리를 1103 샘플(44.1kHz 기준 25.011ms) 늦춘다.
+# 보정하지 않으면 잡음제거를 켠 줄만 25ms 늦게 나와, 전체 편집에서
+# 귀로 맞춘 싱크와 어긋난다 (브라우저 쪽 잡음제거에는 이 지연이 없다).
+AFFTDN_LATENCY = 1103 / 44100.0
+
 def clean_of(row):
-    try: return CLEAN_CHAIN.get(int(row.get("clean") or 0), "")
+    try: lv = int(row.get("clean") or 0)
     except (TypeError, ValueError): return ""
+    chain = CLEAN_CHAIN.get(lv, "")
+    if not chain:
+        return ""
+    return chain + f"atrim=start={AFFTDN_LATENCY:.6f},asetpts=PTS-STARTPTS,"
 
 
 def probe_dur(path):
