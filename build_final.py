@@ -138,12 +138,15 @@ for i, l in enumerate([l for l in have if l["id"] in files], start=1):
     efil_ = eq_of(latest[l["id"]])
     sfil_ = speed_of(latest[l["id"]])
     # 따로 녹음한 목소리를 자연스럽게 잇기 :
-    #   앞 묵음 제거 → 음량 평준화 → 양끝 짧은 페이드 → 제자리로 밀기
+    #   음량 평준화 → 양끝 짧은 페이드 → 제자리로 밀기
+    #
+    # 앞 묵음을 여기서 자동으로 지우지 않는다.
+    # 지우면 녹음마다 최대 0.06초씩 당겨져, 전체 편집에서 귀로 맞춰 둔
+    # 싱크와 어긋난다. 앞을 자르는 것은 ✂ 앞뒤 정리(trim_s) 가 맡는다.
     filt.append(
         f"[{i}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
         f"{tfil_}"
         f"{sfil_}"
-        f"silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.025:detection=peak,"
         f"{cfil_}"
         f"{efil_}"
         f"{level_filter(files[l['id']], tfil_ + sfil_)}"

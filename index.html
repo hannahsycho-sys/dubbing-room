@@ -4419,13 +4419,13 @@ async function mix(){
   let bed=null;
   if(PROJECT.videoBgm){try{bed=await load(PROJECT.videoBgm)}catch(e){console.warn("bgm 없음")}}
   const voices=[]; mixSkipped=[];
+  /* 전체 편집에서 듣던 것과 '완전히 같은' 소리를 쓴다 — voiceBuffer 하나로 통일.
+     예전에는 여기서 따로 만들다 보니 말 속도(speed)가 통째로 빠지고,
+     앞 무음도 다르게 처리돼서 맞춰 놓은 싱크가 추출본에서 어긋났다. */
   for(const s of subs){const l=lineById(s.line_id);if(!l)continue;
     const off=(s.offset_ms||0)/1000;                 // 선생님이 맞춘 미세조정
     try{
-      let bf=await load(pub(s.path));
-      bf=trimBuffer(bf,s.trim_s,s.trim_e);
-      const lv=Math.max(0,Math.min(3,+s.clean||0));
-      if(lv) bf=await cleanBuffer(bf,lv);
+      const bf=await voiceBuffer(l, pub(s.path));
       voices.push({at:Math.max(0,l.s+off),buf:bf,vg:dbToMul(s.gain_db)});
     }
     catch(e){console.warn("skip",s.path,e);mixSkipped.push(`${l.id}번 ${l.char}(${s.person})`)}}
@@ -4446,16 +4446,13 @@ async function mix(){
     }
     b.connect(g).connect(off.destination);b.start(0)}
   for(const v of voices){
-    const {offset,dur,gain}=polish(v.buf);
+    /* voiceBuffer 가 이미 평준화·음색·페이드를 다 해 놓았다.
+       여기서 또 손대면(polish) 편집 화면과 소리도 자리도 달라진다. */
     const src=off.createBufferSource(); src.buffer=v.buf;
-    const g=off.createGain(); const at=v.at, fade=0.015;
-    g.gain.setValueAtTime(0.0001,at);
-    const gv=gain*balance.voice*(v.vg||1);
-    g.gain.linearRampToValueAtTime(gv,at+fade);
-    g.gain.setValueAtTime(gv,Math.max(at+fade,at+dur-0.03));
-    g.gain.linearRampToValueAtTime(0.0001,at+dur);
+    const g=off.createGain();
+    g.gain.value=balance.voice*(v.vg||1);
     src.connect(g).connect(off.destination);
-    src.start(at,offset,dur);
+    src.start(v.at);
   }
   return off.startRendering();
 }
